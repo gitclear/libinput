@@ -1166,7 +1166,7 @@ tp_thumb_detect(struct tp_dispatch *tp, struct tp_touch *t, uint64_t time)
 		return;
 
 	/* A very large touch below the upper thumb line = definite thumb */
-	if (t->pressure > tp->thumb.threshold &&
+	if (t->pressure > tp->thumb.pressure_threshold &&
 	    t->point.y >= tp->thumb.upper_thumb_line) {
 		t->thumb.state = THUMB_STATE_YES;
 		goto out;
