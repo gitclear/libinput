@@ -65,7 +65,7 @@ pressure ranges, see :ref:`touchpad_pressure`.
 Palm detection based on touch size
 ------------------------------------------------------------------------------
 
-On touchads that support the ``ABS_MT_TOUCH_MAJOR`` axes, libinput can perform
+On touchpads that support the ``ABS_MT_TOUCH_MAJOR`` axes, libinput can perform
 palm detection based on the size of the touch ellipse. This works similar to
 the pressure-based palm detection in that a touch is labelled as palm when
 it exceeds the (device-specific) touch size threshold.

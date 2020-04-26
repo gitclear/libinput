@@ -1,9 +1,6 @@
 ACTION!="add|change", GOTO="libinput_device_group_end"
 KERNEL!="event[0-9]*", GOTO="libinput_device_group_end"
 
-ATTRS{phys}=="?*", \
-	ENV{LIBINPUT_DEVICE_GROUP}=="", \
-	PROGRAM="@UDEV_TEST_PATH@libinput-device-group %S%p", \
-	ENV{LIBINPUT_DEVICE_GROUP}="%c"
+ATTRS{phys}=="?*", IMPORT{program}="@UDEV_TEST_PATH@libinput-device-group %S%p"
 
 LABEL="libinput_device_group_end"

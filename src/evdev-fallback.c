@@ -29,6 +29,7 @@
 #include <mtdev-plumbing.h>
 
 #include "evdev-fallback.h"
+#include "util-input-event.h"
 
 static void
 fallback_keyboard_notify_key(struct fallback_dispatch *dispatch,
@@ -701,10 +702,10 @@ fallback_lid_keyboard_event(uint64_t time,
 	if (dispatch->lid.reliability == RELIABILITY_WRITE_OPEN) {
 		int fd = libevdev_get_fd(dispatch->device->evdev);
 		int rc;
-		struct input_event ev[2] = {
-			{{ 0, 0 }, EV_SW, SW_LID, 0 },
-			{{ 0, 0 }, EV_SYN, SYN_REPORT, 0 },
-		};
+		struct input_event ev[2];
+
+		ev[0] = input_event_init(0, EV_SW, SW_LID, 0);
+		ev[1] = input_event_init(0, EV_SYN, SYN_REPORT, 0);
 
 		rc = write(fd, ev, sizeof(ev));
 
@@ -977,9 +978,7 @@ fallback_handle_state(struct fallback_dispatch *dispatch,
 	if (dispatch->pending_event & EVDEV_ABSOLUTE_TOUCH_DOWN) {
 		if (fallback_flush_st_down(dispatch, device, time))
 			need_touch_frame = true;
-	}
-
-	if (dispatch->pending_event & EVDEV_ABSOLUTE_MOTION) {
+	} else if (dispatch->pending_event & EVDEV_ABSOLUTE_MOTION) {
 		if (device->seat_caps & EVDEV_DEVICE_TOUCH) {
 			if (fallback_flush_st_motion(dispatch,
 						     device,
@@ -1227,7 +1226,7 @@ fallback_interface_update_rect(struct evdev_dispatch *evdev_dispatch,
 				uint64_t time)
 {
 	struct fallback_dispatch *dispatch = fallback_dispatch(evdev_dispatch);
-	struct device_coord_rect rect = {0};
+	struct device_coord_rect rect;
 
 	assert(phys_rect);
 
@@ -1501,7 +1500,8 @@ fallback_change_scroll_method(struct evdev_device *device)
 	struct fallback_dispatch *dispatch = fallback_dispatch(device->dispatch);
 
 	if (device->scroll.want_method == device->scroll.method &&
-	    device->scroll.want_button == device->scroll.button)
+	    device->scroll.want_button == device->scroll.button &&
+	    device->scroll.want_lock_enabled == device->scroll.lock_enabled)
 		return;
 
 	if (fallback_any_button_down(dispatch, device))
@@ -1509,6 +1509,8 @@ fallback_change_scroll_method(struct evdev_device *device)
 
 	device->scroll.method = device->scroll.want_method;
 	device->scroll.button = device->scroll.want_button;
+	device->scroll.lock_enabled = device->scroll.want_lock_enabled;
+	evdev_set_button_scroll_lock_enabled(device, device->scroll.lock_enabled);
 }
 
 static int

@@ -63,6 +63,7 @@ make_data_dir(const char *file_content)
 		litest_assert_int_eq(rc, (int)(strlen(dirname) + 16));
 
 		fp = fopen(filename, "w+");
+		litest_assert_notnull(fp);
 		rc = fputs(file_content, fp);
 		fclose(fp);
 		litest_assert_int_ge(rc, 0);
@@ -1312,7 +1313,7 @@ START_TEST(quirks_model_alps)
 	bool exists, value = false;
 
 	q = dev->quirks;
-	exists = quirks_get_bool(q, QUIRK_MODEL_ALPS_TOUCHPAD, &value);
+	exists = quirks_get_bool(q, QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD, &value);
 
 	if (strstr(libinput_device_get_name(device), "ALPS")) {
 		ck_assert(exists);

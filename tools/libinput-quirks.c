@@ -29,7 +29,6 @@
 #include <getopt.h>
 #include <sys/stat.h>
 
-#include "libinput-util.h"
 #include "quirks.h"
 #include "shared.h"
 #include "builddir.h"

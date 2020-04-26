@@ -49,7 +49,7 @@ protocolA_create(struct litest_device *d)
 	return true; /* we want litest to create our device */
 }
 
-static void
+static bool
 protocolA_down(struct litest_device *d, unsigned int slot, double x, double y)
 {
 	struct protocolA_device *dev = d->private;
@@ -90,9 +90,11 @@ protocolA_down(struct litest_device *d, unsigned int slot, double x, double y)
 		litest_event(d, EV_KEY, BTN_TOUCH, 1);
 		litest_event(d, EV_SYN, SYN_REPORT, 0);
 	}
+
+	return true; /* we handled the event */
 }
 
-static void
+static bool
 protocolA_move(struct litest_device *d, unsigned int slot, double x, double y)
 {
 	struct protocolA_device *dev = d->private;
@@ -128,9 +130,11 @@ protocolA_move(struct litest_device *d, unsigned int slot, double x, double y)
 
 	if (!first)
 		litest_event(d, EV_SYN, SYN_REPORT, 0);
+
+	return true; /* we handled the event */
 }
 
-static void
+static bool
 protocolA_up(struct litest_device *d, unsigned int slot)
 {
 	struct protocolA_device *dev = d->private;
@@ -166,6 +170,8 @@ protocolA_up(struct litest_device *d, unsigned int slot)
 	if (first)
 		litest_event(d, EV_KEY, BTN_TOUCH, 0);
 	litest_event(d, EV_SYN, SYN_REPORT, 0);
+
+	return true; /* we handled the event */
 }
 
 static struct litest_device_interface interface = {

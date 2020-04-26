@@ -64,7 +64,11 @@ For the vast majority of bugs you should not take longer than 5 seconds or
 three interactions (clicks, touches, taps, ...) with the device to
 reproduce. If it takes longer than that, you can narrow it down further.
 
-Once you can reproduce it, use the :ref:`libinput-debug-events` helper tool.
+Once you can reproduce it, use the :ref:`libinput-debug-events` helper
+tool::
+
+ $> libinput debug-events --verbose
+
 The output is textual and can help identify whether the bug is in libinput
 at all. Note that any configuration options you have set must be specified
 on the commandline, see the :ref:`libinput-debug-events`
@@ -342,3 +346,51 @@ However, if the regression is in behavior unrelated to the fix itself it is
 usually better to file a new bug to reduce the noise. For example, if a fix
 to improve tapping breaks two-finger scrolling behavior, you should file a
 new bug but reference the original bug.
+
+.. _reporting_bugs_tags:
+
+------------------------------------------------------------------------------
+Gitlab issue tracker tags
+------------------------------------------------------------------------------
+
+The gitlab issue tracker allows developers to add tags to bugs to classify
+them.
+
+- **being worked on**: someone is currently working on this feature. This
+  tag is used for features that will take a long time to implement fully and
+  prevents others from having to duplicate the work. Do reach out and ask if
+  help and/or further testing is needed.
+- **bug**: issue is confirmed to be a bug
+- **cantfix**: for technical reasons, this bug cannot be fixed, or at least
+  it cannot be fixed in libinput.
+- **enhancement**: this issue describes a future feature, not a bug.
+- **help needed**: this issue requires someone outside the libinput core
+  developer team to implement it. It is unlikely to be implemented
+  without someone stepping up to do the work. If you do see this tag, do ask
+  for guidance on how to implement it.
+- **hw issue**: an issue that affects a specific device and is a hardware
+  bug, not a software bug. Often these needs to be worked around in libinput
+  but there are cases where a hw issue ends up as *cantfix*.
+- **janitor**: a cleanup task that does not substantially affect how
+  libinput works. These are usually good bugs for newcomers to start on.
+- **kernel**: this issue is a kernel bug, not a libinput bug. Often closed
+  as *cantfix* of *wontfix* as we wait for the kernel to address the issue
+  instead.
+- **needs triage**: bug has not yet been confirmed by a core developer.
+- **not our bug**: the issue is in some other component of the stack and
+  needs to be addressed there.
+- **please test**: a fix is available but not yet merged and should be
+  tested by the reporter or others affected by the issue.
+- **quirk**: this is issue needs :ref:`device-quirks` to be fixed
+- **regression**: the issue is a regression to previous versions of
+  libinput. These issues get priorities.
+- **waiting on reporter**: some more information is required from the
+  reporter and the issue cannot be fixed until the issue has been provided.
+  Where a bug is left in this state for too long, the bug will be closed as
+  *cantfix*.
+- **wontfix**: this issue will not get fixed. This tag is usually assigned
+  to feature requests that are outside the scope of libinput or would put an
+  unreasonable maintenance burdern on the maintainers.
+
+These tags are high-level categories only, always look for the comments in
+the issue to get further details.

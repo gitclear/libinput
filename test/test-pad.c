@@ -916,6 +916,72 @@ START_TEST(pad_mode_group_has_no_toggle)
 }
 END_TEST
 
+static bool
+pad_has_keys(struct litest_device *dev)
+{
+	struct libevdev *evdev = dev->evdev;
+
+	return (libevdev_has_event_code(evdev, EV_KEY, KEY_BUTTONCONFIG) ||
+		libevdev_has_event_code(evdev, EV_KEY, KEY_ONSCREEN_KEYBOARD) ||
+	        libevdev_has_event_code(evdev, EV_KEY, KEY_CONTROLPANEL));
+}
+
+static void
+pad_key_down(struct litest_device *dev, unsigned int which)
+{
+	litest_event(dev, EV_ABS, ABS_MISC, 15);
+	litest_event(dev, EV_KEY, which, 1);
+	litest_event(dev, EV_SYN, SYN_REPORT, 0);
+}
+
+static void
+pad_key_up(struct litest_device *dev, unsigned int which)
+{
+	litest_event(dev, EV_ABS, ABS_MISC, 0);
+	litest_event(dev, EV_KEY, which, 0);
+	litest_event(dev, EV_SYN, SYN_REPORT, 0);
+}
+
+START_TEST(pad_keys)
+{
+	struct litest_device *dev = litest_current_device();
+	struct libinput *li = dev->libinput;
+	unsigned int key;
+
+	if (!pad_has_keys(dev))
+		return;
+
+	litest_drain_events(li);
+
+	key = KEY_BUTTONCONFIG;
+	pad_key_down(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_PRESSED);
+
+	pad_key_up(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_RELEASED);
+
+	key = KEY_ONSCREEN_KEYBOARD;
+	pad_key_down(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_PRESSED);
+
+	pad_key_up(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_RELEASED);
+
+	key = KEY_CONTROLPANEL;
+	pad_key_down(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_PRESSED);
+
+	pad_key_up(dev, key);
+	libinput_dispatch(li);
+	litest_assert_pad_key_event(li, key, LIBINPUT_KEY_STATE_RELEASED);
+}
+END_TEST
+
 TEST_COLLECTION(tablet_pad)
 {
 	litest_add("pad:cap", pad_cap, LITEST_TABLET_PAD, LITEST_ANY);
@@ -950,4 +1016,6 @@ TEST_COLLECTION(tablet_pad)
 	litest_add("pad:modes", pad_mode_group_has, LITEST_TABLET_PAD, LITEST_ANY);
 	litest_add("pad:modes", pad_mode_group_has_invalid, LITEST_TABLET_PAD, LITEST_ANY);
 	litest_add("pad:modes", pad_mode_group_has_no_toggle, LITEST_TABLET_PAD, LITEST_ANY);
+
+	litest_add("pad:keys", pad_keys, LITEST_TABLET_PAD, LITEST_ANY);
 }

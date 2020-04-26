@@ -18,6 +18,7 @@ to be useful.
    gestures.rst
    middle-button-emulation.rst
    palm-detection.rst
+   touchpad-thumb-detection.rst
    scrolling.rst
    t440-support.rst
    tapping.rst

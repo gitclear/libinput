@@ -4,8 +4,20 @@ MatchProduct=0x0401
 MatchUdevType=mouse
 ModelBouncingKeys=1
 
+[Contour Design RollerMouse Free 3]
+MatchVendor=0x0B33
+MatchProduct=0x0404
+MatchUdevType=mouse
+ModelBouncingKeys=1
+
 [Contour Design RollerMouse Re:d]
 MatchVendor=0x0B33
 MatchProduct=0x1000
+MatchUdevType=mouse
+ModelBouncingKeys=1
+
+[Contour Design RollerMouse Red v3]
+MatchVendor=0x0B33
+MatchProduct=0x1004
 MatchUdevType=mouse
 ModelBouncingKeys=1

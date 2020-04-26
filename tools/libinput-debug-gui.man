@@ -73,11 +73,13 @@ respectively, at the touch point or absolute position.
 .B Tablet tools
 Events from tablet tools show a cyan square at the proximity-in and
 proximity-out positions. The tool position is shown as circle and increases
-in radius with increasing pressure or distance. Where tilt is available, the
-circle changes to an ellipsis to indicate the tilt angle. Relative events
-from the tablet tool are displayed as a yellow snake, always starting from
-the center of the window on proximity in. Button events are displayed in the
-bottom-most button oblong, with the name of the button displayed on press.
+in radius with increasing pressure or distance. Pressure and distance are
+also shown in the vertical bar south-east of center. Where tilt is
+available, the circle changes to an ellipsis to indicate the tilt angle.
+Relative events from the tablet tool are displayed as a yellow snake, always
+starting from the center of the window on proximity in. Button events are
+displayed in the bottom-most button oblong, with the name of the button
+displayed on press.
 .TP 8
 .B Tablet pads
 Button events are displayed in the bottom-most button oblong, with the name

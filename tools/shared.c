@@ -23,21 +23,25 @@
 
 #include <config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <getopt.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <libudev.h>
+#include <unistd.h>
 
 #include <libevdev/libevdev.h>
-#include <libinput-util.h>
 
 #include "builddir.h"
 #include "shared.h"
+#include "util-macros.h"
+#include "util-strings.h"
 
 LIBINPUT_ATTRIBUTE_PRINTF(3, 0)
 static void
@@ -79,6 +83,7 @@ tools_init_options(struct tools_options *options)
 	options->click_method = -1;
 	options->scroll_method = -1;
 	options->scroll_button = -1;
+	options->scroll_button_lock = -1;
 	options->speed = 0.0;
 	options->profile = LIBINPUT_CONFIG_ACCEL_PROFILE_NONE;
 }
@@ -194,6 +199,12 @@ tools_parse_option(int option,
 			return 1;
 		}
 		break;
+	case OPT_SCROLL_BUTTON_LOCK_ENABLE:
+		options->scroll_button_lock = true;
+		break;
+	case OPT_SCROLL_BUTTON_LOCK_DISABLE:
+		options->scroll_button_lock = false;
+		break;
 	case OPT_SPEED:
 		if (!optarg)
 			return 1;
@@ -294,14 +305,15 @@ out:
 }
 
 static struct libinput *
-tools_open_device(const char *path, bool verbose, bool *grab)
+tools_open_device(const char **paths, bool verbose, bool *grab)
 {
 	struct libinput_device *device;
 	struct libinput *li;
+	const char **p = paths;
 
 	li = libinput_path_create_context(&interface, grab);
 	if (!li) {
-		fprintf(stderr, "Failed to initialize context from %s\n", path);
+		fprintf(stderr, "Failed to initialize path context\n");
 		return NULL;
 	}
 
@@ -310,11 +322,15 @@ tools_open_device(const char *path, bool verbose, bool *grab)
 		libinput_log_set_priority(li, LIBINPUT_LOG_PRIORITY_DEBUG);
 	}
 
-	device = libinput_path_add_device(li, path);
-	if (!device) {
-		fprintf(stderr, "Failed to initialized device %s\n", path);
-		libinput_unref(li);
-		li = NULL;
+	while (*p) {
+		device = libinput_path_add_device(li, *p);
+		if (!device) {
+			fprintf(stderr, "Failed to initialize device %s\n", *p);
+			libinput_unref(li);
+			li = NULL;
+			break;
+		}
+		p++;
 	}
 
 	return li;
@@ -332,7 +348,7 @@ tools_setenv_quirks_dir(void)
 
 struct libinput *
 tools_open_backend(enum tools_backend which,
-		   const char *seat_or_device,
+		   const char **seat_or_device,
 		   bool verbose,
 		   bool *grab)
 {
@@ -342,7 +358,7 @@ tools_open_backend(enum tools_backend which,
 
 	switch (which) {
 	case BACKEND_UDEV:
-		li = tools_open_udev(seat_or_device, verbose, grab);
+		li = tools_open_udev(seat_or_device[0], verbose, grab);
 		break;
 	case BACKEND_DEVICE:
 		li = tools_open_device(seat_or_device, verbose, grab);
@@ -403,6 +419,10 @@ tools_device_apply_config(struct libinput_device *device,
 	if (options->scroll_button != -1)
 		libinput_device_config_scroll_set_button(device,
 							 options->scroll_button);
+	if (options->scroll_button_lock != -1)
+		libinput_device_config_scroll_set_button_lock(device,
+							      options->scroll_button_lock);
+
 
 	if (libinput_device_config_accel_is_available(device)) {
 		libinput_device_config_accel_set_speed(device,
@@ -596,13 +616,15 @@ tools_list_device_quirks(struct quirks_context *ctx,
 	if (!quirks)
 		return;
 
-	q = QUIRK_MODEL_ALPS_TOUCHPAD;
+	q = QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD;
 	do {
 		if (quirks_has_quirk(quirks, q)) {
 			const char *name;
+			bool b;
 
 			name = quirk_get_name(q);
-			snprintf(buf, sizeof(buf), "%s=1", name);
+			quirks_get_bool(quirks, q, &b);
+			snprintf(buf, sizeof(buf), "%s=%d", name, b ? 1 : 0);
 			callback(userdata, buf);
 		}
 	} while(++q < _QUIRK_LAST_MODEL_QUIRK_);
@@ -642,6 +664,7 @@ tools_list_device_quirks(struct quirks_context *ctx,
 				break;
 			case QUIRK_ATTR_LID_SWITCH_RELIABILITY:
 			case QUIRK_ATTR_KEYBOARD_INTEGRATION:
+			case QUIRK_ATTR_TRACKPOINT_INTEGRATION:
 			case QUIRK_ATTR_TPKBCOMBO_LAYOUT:
 			case QUIRK_ATTR_MSC_TIMESTAMP:
 				quirks_get_string(quirks, q, &s);

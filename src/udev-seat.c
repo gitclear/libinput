@@ -27,8 +27,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
 
 #include "evdev.h"
 #include "udev-seat.h"
@@ -42,6 +40,38 @@ udev_seat_create(struct udev_input *input,
 		 const char *seat_name);
 static struct udev_seat *
 udev_seat_get_named(struct udev_input *input, const char *seat_name);
+
+
+static inline bool
+filter_duplicates(struct udev_seat *udev_seat,
+		  struct udev_device *udev_device)
+{
+	struct libinput_device *device;
+	const char *new_syspath = udev_device_get_syspath(udev_device);
+	bool ignore_device = false;
+
+	if (!udev_seat)
+		return false;
+
+	list_for_each(device, &udev_seat->base.devices_list, link) {
+		const char *syspath;
+		struct udev_device *ud;
+
+		ud = libinput_device_get_udev_device(device);
+		if (!ud)
+			continue;
+
+		syspath = udev_device_get_syspath(ud);
+		if (syspath && new_syspath && streq(syspath, new_syspath))
+			ignore_device = true;
+		udev_device_unref(ud);
+
+		if (ignore_device)
+			break;
+	}
+
+	return ignore_device;
+}
 
 static int
 device_added(struct udev_device *udev_device,
@@ -73,6 +103,13 @@ device_added(struct udev_device *udev_device,
 		seat_name = default_seat_name;
 
 	seat = udev_seat_get_named(input, seat_name);
+
+	/* There is a race at startup: a device added between setting
+	 * up the udev monitor and enumerating all current devices may show
+	 * up in both lists. Filter those out.
+	 */
+	if (filter_duplicates(seat, udev_device))
+		return 0;
 
 	if (seat)
 		libinput_seat_ref(&seat->base);

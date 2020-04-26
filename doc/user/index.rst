@@ -10,7 +10,9 @@
   faqs
   reporting-bugs
   troubleshooting
+  contributing
   development
+  API documentation <@HTTP_DOC_LINK@/api/>
 
 
 ++++++++++++++++++++++++++++++
@@ -41,7 +43,7 @@ API documentation
 -----------------
 
 The API documentation is available here:
-    http://wayland.freedesktop.org/libinput/doc/latest/api/
+    https://wayland.freedesktop.org/libinput/doc/latest/api/
 
 .. note:: This documentation is generally only needed by authors of Wayland
 	  compositors or other developers dealing with input events directly.

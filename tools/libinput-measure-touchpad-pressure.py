@@ -37,6 +37,51 @@ except ModuleNotFoundError as e:
     sys.exit(1)
 
 
+class TableFormatter(object):
+    ALIGNMENT = 3
+
+    def __init__(self):
+        self.colwidths = []
+
+    @property
+    def width(self):
+        return sum(self.colwidths) + 1
+
+    def headers(self, args):
+        s = '|'
+        align = self.ALIGNMENT - 1  # account for |
+
+        for arg in args:
+            # +2 because we want space left/right of text
+            w = ((len(arg) + 2 + align) // align) * align
+            self.colwidths.append(w + 1)
+            s += ' {:^{width}s} |'.format(arg, width=w - 2)
+
+        return s
+
+    def values(self, args):
+        s = '|'
+        for w, arg in zip(self.colwidths, args):
+            w -= 1  # width includes | separator
+            if type(arg) == str:
+                # We want space margins for strings
+                s += ' {:{width}s} |'.format(arg, width=w - 2)
+            elif type(arg) == bool:
+                s += '{:^{width}s}|'.format('x' if arg else ' ', width=w)
+            else:
+                s += '{:^{width}d}|'.format(arg, width=w)
+
+        if len(args) < len(self.colwidths):
+            s += '|'.rjust(self.width - len(s), ' ')
+        return s
+
+    def separator(self):
+        return '+' + '-' * (self.width - 2) + '+'
+
+
+fmt = TableFormatter()
+
+
 class Range(object):
     """Class to keep a min/max of a value around"""
     def __init__(self):
@@ -99,12 +144,12 @@ class TouchSequence(object):
 
     def avg(self):
         """Average pressure value of this sequence"""
-        return int(sum([p.pressure for p in self.points])/len(self.points))
+        return int(sum([p.pressure for p in self.points]) / len(self.points))
 
     def median(self):
         """Median pressure value of this sequence"""
         ps = sorted([p.pressure for p in self.points])
-        idx = int(len(self.points)/2)
+        idx = int(len(self.points) / 2)
         return ps[idx]
 
     def __str__(self):
@@ -112,36 +157,19 @@ class TouchSequence(object):
 
     def _str_summary(self):
         if not self.points:
-            return "{:78s}".format("Sequence: no pressure values recorded")
+            return fmt.values([self.tracking_id, False, False, False, False,
+                              'No pressure values recorded'])
 
-        s = "Sequence {} pressure: "\
-            "min: {:3d} max: {:3d} avg: {:3d} median: {:3d} tags:" \
-            .format(
-                self.tracking_id,
-                self.prange.min,
-                self.prange.max,
-                self.avg(),
-                self.median()
-            )
-        if self.was_down:
-            s += " down"
-        if self.was_palm:
-            s += " palm"
-        if self.was_thumb:
-            s += " thumb"
+        s = fmt.values([self.tracking_id, self.was_down, True, self.was_palm,
+                        self.was_thumb, self.prange.min, self.prange.max, 0,
+                        self.avg(), self.median()])
 
         return s
 
     def _str_state(self):
-        s = "Touchpad pressure: {:3d} min: {:3d} max: {:3d} tags: {} {} {}" \
-            .format(
-                self.points[-1].pressure,
-                self.prange.min,
-                self.prange.max,
-                "down" if self.is_down else "    ",
-                "palm" if self.is_palm else "    ",
-                "thumb" if self.is_thumb else "     "
-            )
+        s = fmt.values([self.tracking_id, self.is_down, not self.is_down,
+                        self.is_palm, self.is_thumb, self.prange.min,
+                        self.prange.max, self.points[-1].pressure])
         return s
 
 
@@ -167,7 +195,7 @@ class Device(libevdev.Device):
             absinfo = self.absinfo[libevdev.EV_ABS.ABS_PRESSURE]
             self.has_mt_pressure = False
             if absinfo is None:
-                raise InvalidDeviceError("device does not have ABS_PRESSURE/ABS_MT_PRESSURE")
+                raise InvalidDeviceError("Device does not have ABS_PRESSURE or ABS_MT_PRESSURE")
 
         prange = absinfo.maximum - absinfo.minimum
 
@@ -227,8 +255,8 @@ def handle_key(device, event):
         libevdev.EV_KEY.BTN_TOOL_QUINTTAP
     ]
     if event.code in tapcodes and event.value > 0:
-        print("\rThis tool cannot handle multiple fingers, "
-              "output will be invalid", file=sys.stderr)
+        print('\r\033[2KThis tool cannot handle multiple fingers, '
+              'output will be invalid')
 
 
 def handle_abs(device, event):
@@ -239,7 +267,7 @@ def handle_abs(device, event):
             try:
                 s = device.current_sequence()
                 s.finalize()
-                print("\r{}".format(s))
+                print("\r\033[2K{}".format(s))
             except IndexError:
                 # If the finger was down at startup
                 pass
@@ -248,7 +276,7 @@ def handle_abs(device, event):
         try:
             s = device.current_sequence()
             s.append(Touch(pressure=event.value))
-            print("\r{}".format(s), end="")
+            print("\r\033[2K{}".format(s), end="")
         except IndexError:
             # If the finger was down at startup
             pass
@@ -262,12 +290,27 @@ def handle_event(device, event):
 
 
 def loop(device):
-    print("Ready for recording data.")
-    print("Pressure range used: {}:{}".format(device.down, device.up))
-    print("Palm pressure range used: {}".format(device.palm))
-    print("Thumb pressure range used: {}".format(device.thumb))
-    print("Place a single finger on the touchpad to measure pressure values.\n"
-          "Ctrl+C to exit\n")
+    print('This is an interactive tool')
+    print()
+    print("Place a single finger on the touchpad to measure pressure values.")
+    print('Check that:')
+    print('- touches subjectively perceived as down are tagged as down')
+    print('- touches with a thumb are tagged as thumb')
+    print('- touches with a palm are tagged as palm')
+    print()
+    print('If the touch states do not match the interaction, re-run')
+    print('with --touch-thresholds=down:up using observed pressure values.')
+    print('See --help for more options.')
+    print()
+    print("Press Ctrl+C to exit")
+    print()
+
+    headers = fmt.headers(['Touch', 'down', 'up', 'palm', 'thumb', 'min', 'max', 'p', 'avg', 'median'])
+    print(fmt.separator())
+    print(fmt.values(['Thresh', device.down, device.up, device.palm, device.thumb]))
+    print(fmt.separator())
+    print(headers)
+    print(fmt.separator())
 
     while True:
         for event in device.events():
@@ -280,7 +323,7 @@ def colon_tuple(string):
         t = tuple([int(x) for x in ts])
         if len(t) == 2 and t[0] >= t[1]:
             return t
-    except:
+    except: # noqa
         pass
 
     msg = "{} is not in format N:M (N >= M)".format(string)
@@ -303,6 +346,10 @@ def main(args):
         '--palm-threshold', metavar='t', type=int,
         help='Threshold when a touch is a palm'
     )
+    parser.add_argument(
+        '--thumb-threshold', metavar='t', type=int,
+        help='Threshold when a touch is a thumb'
+    )
     args = parser.parse_args()
 
     try:
@@ -314,13 +361,19 @@ def main(args):
         if args.palm_threshold is not None:
             device.palm = args.palm_threshold
 
+        if args.thumb_threshold is not None:
+            device.thumb = args.thumb_threshold
+
         loop(device)
     except KeyboardInterrupt:
-        pass
+        print('\r\033[2K{}'.format(fmt.separator()))
+        print()
+
     except (PermissionError, OSError):
         print("Error: failed to open device")
     except InvalidDeviceError as e:
-        print("Error: {}".format(e))
+        print("This device does not have the capabilities for pressure-based touch detection.")
+        print("Details: {}".format(e))
 
 
 if __name__ == "__main__":

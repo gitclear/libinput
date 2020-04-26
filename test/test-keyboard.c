@@ -31,8 +31,8 @@
 
 START_TEST(keyboard_seat_key_count)
 {
-	const int num_devices = 4;
-	struct litest_device *devices[num_devices];
+	struct litest_device *devices[4];
+	const int num_devices = ARRAY_LENGTH(devices);
 	struct libinput *libinput;
 	struct libinput_event *ev;
 	struct libinput_event_keyboard *kev;

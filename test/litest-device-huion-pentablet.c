@@ -90,7 +90,7 @@ static int events[] = {
 
 TEST_DEVICE("huion-tablet",
 	.type = LITEST_HUION_TABLET,
-	.features = LITEST_TABLET | LITEST_HOVER,
+	.features = LITEST_TABLET | LITEST_HOVER | LITEST_FORCED_PROXOUT,
 	.interface = &interface,
 
 	.name = "HUION PenTablet Pen",

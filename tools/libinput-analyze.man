@@ -1,0 +1,30 @@
+.TH libinput-analyze "1" "" "libinput @LIBINPUT_VERSION@" "libinput Manual"
+.SH NAME
+libinput\-analyze \- analyze device data
+.SH SYNOPSIS
+.B libinput analyze [\-\-help] \fI<feature> [<args>]\fR
+.SH DESCRIPTION
+.PP
+The
+.B "libinput analyze"
+tool analyzes device data. Depending on what is to
+be analyzed, this tool may not create a libinput context.
+.PP
+This is a debugging tool only, its output may change at any time. Do not
+rely on the output.
+.PP
+This tool may need to be run as root to have access to the
+/dev/input/eventX nodes.
+.SH OPTIONS
+.TP 8
+.B \-\-help
+Print help
+.SH FEATURES
+Features that can be analyzed include
+.TP 8
+.B libinput\-analyze\-per-slot-delta(1)
+analyze the delta per event per slot
+.SH LIBINPUT
+Part of the
+.B libinput(1)
+suite

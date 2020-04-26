@@ -52,7 +52,7 @@ def tv2us(sec, usec):
 
 
 def us2ms(us):
-    return int(us/1000)
+    return int(us / 1000)
 
 
 class Touch(object):
@@ -103,7 +103,7 @@ class Device(libevdev.Device):
         device_node = None
         for device in context.list_devices(subsystem='input'):
             if (not device.device_node or
-                not device.device_node.startswith('/dev/input/event')):
+                    not device.device_node.startswith('/dev/input/event')):
                 continue
 
             # pick the touchpad by default, fallback to the first
@@ -165,12 +165,12 @@ class Device(libevdev.Device):
         dmax = max(deltas)
         dmin = min(deltas)
 
-        l = len(deltas)
+        ndeltas = len(deltas)
 
-        davg = sum(deltas)/l
-        dmedian = deltas[int(l/2)]
-        d95pc = deltas[int(l * 0.95)]
-        d90pc = deltas[int(l * 0.90)]
+        davg = sum(deltas) / ndeltas
+        dmedian = deltas[int(ndeltas / 2)]
+        d95pc = deltas[int(ndeltas * 0.95)]
+        d90pc = deltas[int(ndeltas * 0.90)]
 
         print("Time: ")
         print("  Max delta: {}ms".format(int(dmax)))
@@ -220,9 +220,7 @@ class Device(libevdev.Device):
 
 
 def main(args):
-    parser = argparse.ArgumentParser(
-            description="Measure tap-to-click properties of devices"
-    )
+    parser = argparse.ArgumentParser(description="Measure tap-to-click properties of devices")
     parser.add_argument('path', metavar='/dev/input/event0',
                         nargs='?', type=str, help='Path to device (optional)')
     parser.add_argument('--format', metavar='format',

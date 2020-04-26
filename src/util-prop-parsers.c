@@ -1,7 +1,5 @@
 /*
- * Copyright © 2008-2011 Kristian Høgsberg
- * Copyright © 2011 Intel Corporation
- * Copyright © 2013-2015 Red Hat, Inc.
+ * Copyright © 2013-2019 Red Hat, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,127 +21,13 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-/*
- * This list data structure is verbatim copy from wayland-util.h from the
- * Wayland project; except that wl_ prefix has been removed.
- */
+#include "util-prop-parsers.h"
 
-#include "config.h"
-
-#include <ctype.h>
-#include <locale.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <libevdev/libevdev.h>
+#include <string.h>
 
-#include "libinput-util.h"
-#include "libinput-private.h"
-
-void
-list_init(struct list *list)
-{
-	list->prev = list;
-	list->next = list;
-}
-
-void
-list_insert(struct list *list, struct list *elm)
-{
-	assert((list->next != NULL && list->prev != NULL) ||
-	       !"list->next|prev is NULL, possibly missing list_init()");
-	assert(((elm->next == NULL && elm->prev == NULL) || list_empty(elm)) ||
-	       !"elm->next|prev is not NULL, list node used twice?");
-
-	elm->prev = list;
-	elm->next = list->next;
-	list->next = elm;
-	elm->next->prev = elm;
-}
-
-void
-list_append(struct list *list, struct list *elm)
-{
-	assert((list->next != NULL && list->prev != NULL) ||
-	       !"list->next|prev is NULL, possibly missing list_init()");
-	assert(((elm->next == NULL && elm->prev == NULL) || list_empty(elm)) ||
-	       !"elm->next|prev is not NULL, list node used twice?");
-
-	elm->next = list;
-	elm->prev = list->prev;
-	list->prev = elm;
-	elm->prev->next = elm;
-}
-
-void
-list_remove(struct list *elm)
-{
-	assert((elm->next != NULL && elm->prev != NULL) ||
-	       !"list->next|prev is NULL, possibly missing list_init()");
-
-	elm->prev->next = elm->next;
-	elm->next->prev = elm->prev;
-	elm->next = NULL;
-	elm->prev = NULL;
-}
-
-bool
-list_empty(const struct list *list)
-{
-	assert((list->next != NULL && list->prev != NULL) ||
-	       !"list->next|prev is NULL, possibly missing list_init()");
-
-	return list->next == list;
-}
-
-void
-ratelimit_init(struct ratelimit *r, uint64_t ival_us, unsigned int burst)
-{
-	r->interval = ival_us;
-	r->begin = 0;
-	r->burst = burst;
-	r->num = 0;
-}
-
-/*
- * Perform rate-limit test. Returns RATELIMIT_PASS if the rate-limited action
- * is still allowed, RATELIMIT_THRESHOLD if the limit has been reached with
- * this call, and RATELIMIT_EXCEEDED if you're beyond the threshold.
- * It's safe to treat the return-value as boolean, if you're not interested in
- * the exact state. It evaluates to "true" if the threshold hasn't been
- * exceeded, yet.
- *
- * The ratelimit object must be initialized via ratelimit_init().
- *
- * Modelled after Linux' lib/ratelimit.c by Dave Young
- * <hidave.darkstar@gmail.com>, which is licensed GPLv2.
- */
-enum ratelimit_state
-ratelimit_test(struct ratelimit *r)
-{
-	struct timespec ts;
-	uint64_t utime;
-
-	if (r->interval <= 0 || r->burst <= 0)
-		return RATELIMIT_PASS;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	utime = s2us(ts.tv_sec) + ns2us(ts.tv_nsec);
-
-	if (r->begin <= 0 || r->begin + r->interval < utime) {
-		/* reset counter */
-		r->begin = utime;
-		r->num = 1;
-		return RATELIMIT_PASS;
-	} else if (r->num < r->burst) {
-		/* continue burst */
-		return (++r->num == r->burst) ? RATELIMIT_THRESHOLD
-					      : RATELIMIT_PASS;
-	}
-
-	return RATELIMIT_EXCEEDED;
-}
+#include "util-macros.h"
+#include "util-strings.h"
 
 /* Helper function to parse the mouse DPI tag from udev.
  * The tag is of the form:
@@ -470,7 +354,8 @@ parse_evcode_property(const char *prop, struct input_event *events, size_t *neve
 	bool rc = false;
 	size_t ncodes = 0;
 	size_t idx;
-	struct input_event evs[*nevents];
+	/* A randomly chosen max so we avoid crazy quirks */
+	struct input_event evs[32];
 
 	memset(evs, 0, sizeof evs);
 
@@ -481,8 +366,7 @@ parse_evcode_property(const char *prop, struct input_event *events, size_t *neve
 	for (idx = 0; strv[idx]; idx++)
 		ncodes++;
 
-	/* A randomly chosen max so we avoid crazy quirks */
-	if (ncodes == 0 || ncodes > 32)
+	if (ncodes == 0 || ncodes > ARRAY_LENGTH(evs))
 		goto out;
 
 	ncodes = min(*nevents, ncodes);
@@ -519,131 +403,68 @@ out:
 }
 
 /**
- * Return the next word in a string pointed to by state before the first
- * separator character. Call repeatedly to tokenize a whole string.
+ * Parse the property value for the EVDEV_ABS_00 properties. Spec is
+ *  EVDEV_ABS_00=min:max:res:fuzz:flat
+ * where any element may be empty and subsequent elements may not be
+ * present. So we have to parse
+ *  EVDEV_ABS_00=min:max:res
+ *  EVDEV_ABS_00=::res
+ *  EVDEV_ABS_00=::res:fuzz:
  *
- * @param state Current state
- * @param len String length of the word returned
- * @param separators List of separator characters
- *
- * @return The first word in *state, NOT null-terminated
+ * Returns a mask of the bits set and the absinfo struct with the values.
+ * The abs value for an unset bit is undefined.
  */
-static const char *
-next_word(const char **state, size_t *len, const char *separators)
+uint32_t
+parse_evdev_abs_prop(const char *prop, struct input_absinfo *abs)
 {
-	const char *next = *state;
-	size_t l;
+	char *str = strdup(prop);
+	char *current, *next;
+	uint32_t mask = 0;
+	int bit = ABS_MASK_MIN;
+	int *val;
+	int values[5];
 
-	if (!*next)
-		return NULL;
+	/* basic sanity check: 5 digits for min/max, 3 for resolution, fuzz,
+	 * flat and the colons. That's plenty, anything over is garbage */
+	if (strlen(prop) > 24)
+		goto out;
 
-	next += strspn(next, separators);
-	if (!*next) {
-		*state = next;
-		return NULL;
-	}
+	current = str;
+	val = values;
+	while (current && *current != '\0' && bit <= ABS_MASK_FLAT) {
+		if (*current != ':') {
+			int v;
+			next = index(current, ':');
+			if (next)
+				*next = '\0';
 
-	l = strcspn(next, separators);
-	*state = next + l;
-	*len = l;
-
-	return next;
-}
-
-/**
- * Return a null-terminated string array with the tokens in the input
- * string, e.g. "one two\tthree" with a separator list of " \t" will return
- * an array [ "one", "two", "three", NULL ].
- *
- * Use strv_free() to free the array.
- *
- * @param in Input string
- * @param separators List of separator characters
- *
- * @return A null-terminated string array or NULL on errors
- */
-char **
-strv_from_string(const char *in, const char *separators)
-{
-	const char *s, *word;
-	char **strv = NULL;
-	int nelems = 0, idx;
-	size_t l;
-
-	assert(in != NULL);
-
-	s = in;
-	while ((word = next_word(&s, &l, separators)) != NULL)
-	       nelems++;
-
-	if (nelems == 0)
-		return NULL;
-
-	nelems++; /* NULL-terminated */
-	strv = zalloc(nelems * sizeof *strv);
-
-	idx = 0;
-
-	s = in;
-	while ((word = next_word(&s, &l, separators)) != NULL) {
-		char *copy = strndup(word, l);
-		if (!copy) {
-			strv_free(strv);
-			return NULL;
+			if (!safe_atoi(current, &v)) {
+				mask = 0;
+				goto out;
+			}
+			*val = v;
+			mask |= bit;
+			current = next ? ++next : NULL;
+		} else {
+			current++;
 		}
-
-		strv[idx++] = copy;
+		bit <<= 1;
+		val++;
 	}
 
-	return strv;
-}
+	if (mask & ABS_MASK_MIN)
+		abs->minimum = values[0];
+	if (mask & ABS_MASK_MAX)
+		abs->maximum = values[1];
+	if (mask & ABS_MASK_RES)
+		abs->resolution = values[2];
+	if (mask & ABS_MASK_FUZZ)
+		abs->fuzz = values[3];
+	if (mask & ABS_MASK_FLAT)
+		abs->flat = values[4];
 
-/**
- * Return a newly allocated string with all elements joined by the
- * joiner, same as Python's string.join() basically.
- * A strv of ["one", "two", "three", NULL] with a joiner of ", " results
- * in "one, two, three".
- *
- * An empty strv ([NULL]) returns NULL, same for passing NULL as either
- * argument.
- *
- * @param strv Input string arrray
- * @param joiner Joiner between the elements in the final string
- *
- * @return A null-terminated string joining all elements
- */
-char *
-strv_join(char **strv, const char *joiner)
-{
-	char **s;
-	char *str;
-	size_t slen = 0;
-	size_t count = 0;
+out:
+	free(str);
 
-	if (!strv || !joiner)
-		return NULL;
-
-	if (strv[0] == NULL)
-		return NULL;
-
-	for (s = strv, count = 0; *s; s++, count++) {
-		slen += strlen(*s);
-	}
-
-	assert(slen < 1000);
-	assert(strlen(joiner) < 1000);
-	assert(count > 0);
-	assert(count < 100);
-
-	slen += (count - 1) * strlen(joiner);
-
-	str = zalloc(slen + 1); /* trailing \0 */
-	for (s = strv; *s; s++) {
-		strcat(str, *s);
-		--count;
-		if (count > 0)
-			strcat(str, joiner);
-	}
-
-	return str;
+	return mask;
 }

@@ -25,7 +25,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <inttypes.h>
 #include <string.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
@@ -94,7 +93,7 @@ libinput_timer_set_flags(struct libinput_timer *timer,
 	if (expire < now) {
 		if ((flags & TIMER_FLAG_ALLOW_NEGATIVE) == 0)
 			log_bug_client(timer->libinput,
-				       "timer %s: offset negative (-%dms)\n",
+				       "timer %s: scheduled expiry is in the past (-%dms), your system is too slow\n",
 				       timer->timer_name,
 				       us2ms(now - expire));
 	} else if ((expire - now) > ms2us(5000)) {

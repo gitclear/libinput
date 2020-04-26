@@ -87,9 +87,9 @@ class Touch(object):
     def __str__(self):
         s = "Touch: major {:3d}".format(self.major)
         if self.minor is not None:
-                s += ", minor {:3d}".format(self.minor)
+            s += ", minor {:3d}".format(self.minor)
         if self.orientation is not None:
-                s += ", orientation {:+3d}".format(self.orientation)
+            s += ", orientation {:+3d}".format(self.orientation)
         return s
 
 
@@ -119,17 +119,15 @@ class TouchSequence(object):
         self.major_range.update(touch.major)
         self.minor_range.update(touch.minor)
 
-        if touch.major < self.device.up or \
-           touch.minor < self.device.up:
-                self.is_down = False
-        elif touch.major > self.device.down or \
-                touch.minor > self.device.down:
+        if touch.major < self.device.up or touch.minor < self.device.up:
+            self.is_down = False
+        elif touch.major > self.device.down or touch.minor > self.device.down:
             self.is_down = True
             self.was_down = True
 
         self.is_palm = touch.major > self.device.palm
         if self.is_palm:
-                self.was_palm = True
+            self.was_palm = True
 
         self.is_thumb = self.device.thumb != 0 and touch.major > self.device.thumb
         if self.is_thumb:
@@ -147,16 +145,14 @@ class TouchSequence(object):
             return "{:78s}".format("Sequence: no major/minor values recorded")
 
         s = "Sequence: major: [{:3d}..{:3d}] ".format(
-                self.major_range.min, self.major_range.max
+            self.major_range.min, self.major_range.max
         )
         if self.device.has_minor:
-                s += "minor: [{:3d}..{:3d}] ".format(
-                        self.minor_range.min, self.minor_range.max
-                     )
+            s += "minor: [{:3d}..{:3d}] ".format(self.minor_range.min, self.minor_range.max)
         if self.was_down:
-                s += " down"
+            s += " down"
         if self.was_palm:
-                s += " palm"
+            s += " palm"
         if self.was_thumb:
             s += " thumb"
 
@@ -164,12 +160,10 @@ class TouchSequence(object):
 
     def _str_state(self):
         touch = self.points[-1]
-        s = "{}, tags: {} {} {}".format(
-                                touch,
-                                "down" if self.is_down else "    ",
-                                "palm" if self.is_palm else "    ",
-                                "thumb" if self.is_thumb else "     "
-                                )
+        s = "{}, tags: {} {} {}".format(touch,
+                                        "down" if self.is_down else "    ",
+                                        "palm" if self.is_palm else "    ",
+                                        "thumb" if self.is_thumb else "     ")
         return s
 
 
@@ -190,7 +184,7 @@ class Device(libevdev.Device):
         print("Using {}: {}\n".format(self.name, self.path))
 
         if not self.has(libevdev.EV_ABS.ABS_MT_TOUCH_MAJOR):
-            raise InvalidDeviceError("device does not have ABS_MT_TOUCH_MAJOR")
+            raise InvalidDeviceError("Device does not have ABS_MT_TOUCH_MAJOR")
 
         self.has_minor = self.has(libevdev.EV_ABS.ABS_MT_TOUCH_MINOR)
         self.has_orientation = self.has(libevdev.EV_ABS.ABS_MT_ORIENTATION)
@@ -250,27 +244,27 @@ class Device(libevdev.Device):
                     libevdev.EV_KEY.BTN_TOOL_QUADTAP,
                     libevdev.EV_KEY.BTN_TOOL_QUINTTAP]
         if event.code in tapcodes and event.value > 0:
-                print("\rThis tool cannot handle multiple fingers, "
-                      "output will be invalid", file=sys.stderr)
+            print("\rThis tool cannot handle multiple fingers, "
+                  "output will be invalid", file=sys.stderr)
 
     def handle_abs(self, event):
         if event.matches(libevdev.EV_ABS.ABS_MT_TRACKING_ID):
-                if event.value > -1:
-                    self.start_new_sequence(event.value)
-                else:
-                    try:
-                        s = self.current_sequence()
-                        s.finalize()
-                        print("\r{}".format(s))
-                    except IndexError:
-                        # If the finger was down during start
-                        pass
+            if event.value > -1:
+                self.start_new_sequence(event.value)
+            else:
+                try:
+                    s = self.current_sequence()
+                    s.finalize()
+                    print("\r{}".format(s))
+                except IndexError:
+                    # If the finger was down during start
+                    pass
         elif event.matches(libevdev.EV_ABS.ABS_MT_TOUCH_MAJOR):
-                self.touch.major = event.value
+            self.touch.major = event.value
         elif event.matches(libevdev.EV_ABS.ABS_MT_TOUCH_MINOR):
-                self.touch.minor = event.value
+            self.touch.minor = event.value
         elif event.matches(libevdev.EV_ABS.ABS_MT_ORIENTATION):
-                self.touch.orientation = event.value
+            self.touch.orientation = event.value
 
     def handle_syn(self, event):
         if self.touch.dirty:
@@ -310,7 +304,7 @@ def colon_tuple(string):
         t = tuple([int(x) for x in ts])
         if len(t) == 2 and t[0] >= t[1]:
             return t
-    except:
+    except: # noqa
         pass
 
     msg = "{} is not in format N:M (N >= M)".format(string)
@@ -318,9 +312,7 @@ def colon_tuple(string):
 
 
 def main(args):
-    parser = argparse.ArgumentParser(
-            description="Measure touch size and orientation"
-    )
+    parser = argparse.ArgumentParser(description="Measure touch size and orientation")
     parser.add_argument('path', metavar='/dev/input/event0',
                         nargs='?', type=str, help='Path to device (optional)')
     parser.add_argument('--touch-thresholds', metavar='down:up',
@@ -345,7 +337,8 @@ def main(args):
     except (PermissionError, OSError):
         print("Error: failed to open device")
     except InvalidDeviceError as e:
-        print("Error: {}".format(e))
+        print("This device does not have the capabilities for size-based touch detection.")
+        print("Details: {}".format(e))
 
 
 if __name__ == "__main__":

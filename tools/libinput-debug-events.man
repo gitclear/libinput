@@ -6,7 +6,7 @@ libinput\-debug\-events \- debug helper for libinput
 .PP
 .B libinput debug\-events \fI[options]\fB \-\-udev \fI<seat>\fB
 .PP
-.B libinput debug\-events \fI[options]\fB [\-\-device] \fI/dev/input/event0\fB
+.B libinput debug\-events \fI[options]\fB [\-\-device] \fI/dev/input/event0\fB [\fI/dev/input/event1\fB...]
 .SH DESCRIPTION
 .PP
 The
@@ -21,7 +21,7 @@ This tool usually needs to be run as root to have access to the
 .SH OPTIONS
 .TP 8
 .B \-\-device \fI/dev/input/event0\fR
-Use the given device with the path backend. The \fB\-\-device\fR argument may be
+Use the given device(s) with the path backend. The \fB\-\-device\fR argument may be
 omitted.
 .TP 8
 .B \-\-grab
@@ -65,7 +65,7 @@ Enable or disable tap-to-click
 Enable or disable tap-and-drag
 .TP 8
 .B \-\-enable\-drag-lock|\-\-disable\-drag\-lock
-Enable or disable tap-and-drag
+Enable or disable drag-lock
 .TP 8
 .B \-\-enable\-natural\-scrolling|\-\-disable\-natural\-scrolling
 Enable or disable natural scrolling
@@ -78,6 +78,9 @@ Enable or disable middle button emulation
 .TP 8
 .B \-\-enable\-dwt|\-\-disable\-dwt
 Enable or disable disable-while-typing
+.TP 8
+.B \-\-enable\-scroll-button-lock|\-\-disable\-scroll-button-lock
+Enable or disable the scroll button lock
 .TP 8
 .B \-\-set\-click\-method=[none|clickfinger|buttonareas]
 Set the desired click method

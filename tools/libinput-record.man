@@ -2,7 +2,7 @@
 .SH NAME
 libinput\-record \- record kernel events
 .SH SYNOPSIS
-.B libinput record [options] [\fI/dev/input/event0\fB]
+.B libinput record [options] [\fI/dev/input/event0\fB [\fI/dev/input/event1\fB ...]]
 .SH DESCRIPTION
 .PP
 The \fBlibinput record\fR tool records kernel events from a device and
@@ -10,14 +10,24 @@ prints them in a format that can later be replayed with the \fBlibinput
 replay(1)\fR tool.  This tool needs to run as root to read from the device.
 .PP
 The output of this tool is YAML, see \fBFILE FORMAT\fR for more details.
-By default it prints to stdout unless the \fB-o\fR option is given.
+By default it prints to stdout unless an output file is provided. For
+example, these are valid invocations:
+
+.B libinput record /dev/input/event3 touchpad.yml
+
+.B libinput record recording.yml
+
+.B libinput record --all all-devices.yml
+
+.B libinput record /dev/input/event3 /dev/input/event4 tp-and-keyboard.yml
+
 .PP
 The events recorded are independent of libinput itself, updating or
 removing libinput will not change the event stream.
 .SH OPTIONS
-If a device node is given, this tool opens that device node. Otherwise,
-a list of devices is presented and the user can select the device to record.
-If unsure, run without any arguments.
+If one or more device nodes are given, this tool opens those device nodes.
+Otherwise, a list of devices is presented and the user can select the device
+to record. If unsure, run without any arguments.
 .TP 8
 .B \-\-help
 Print help
@@ -25,10 +35,9 @@ Print help
 .B \-\-all
 Record all \fI/dev/input/event*\fR devices available on the system. This
 option should be used in exceptional cases only, the output file is almost
-always too noisy and replaying the recording may not be possible. Use
-\fB\-\-multiple\fR instead.
-This option requires that a \fB\-\-output-file\fR is specified and may not
-be used together with \fB\-\-multiple\fR.
+always too noisy and replaying the recording may not be possible.
+This option requires \fB\-\-output-file\fR and no device
+nodes may be provided on the commandline.
 .TP 8
 .B \-\-autorestart=s
 Terminate the current recording after
@@ -43,15 +52,11 @@ greater than 0.
 .TP 8
 .B \-\-output-file=filename.yml
 .PD 1
-Specifies the output file to use. If \fB\-\-autorestart\fR or
-\fB\-\-multiple\fR is given, the filename is used as prefix only.
-.TP 8
-.B \-\-multiple
-Record multiple devices at once, see section
-.B RECORDING MULTIPLE DEVICES
-This option requires that a
-\fB\-\-output-file\fR is specified and that all devices to be recorded are
-given on the commandline.
+Specifies the output file to use. If \fB\-\-autorestart\fR is given,
+the filename is used as prefix only.
+Where \-\-output-file is not given and the first \fBor\fR last argument is 
+not an input device, the first \fBor\fR last argument will be the output
+file.
 .TP 8
 .B \-\-show\-keycodes
 Show keycodes as-is in the recording. By default, common keys are obfuscated
@@ -67,16 +72,15 @@ for more details.
 .SH RECORDING MULTIPLE DEVICES
 Sometimes it is necessary to record the events from multiple devices
 simultaneously, e.g.  when an interaction between a touchpad and a keyboard
-causes a bug. The \fB\-\-multiple\fR option records multiple devices with
+causes a bug. \fBlibinput record\fR records multiple devices with
 an identical time offset, allowing for correct replay of the interaction.
 .PP
-The \fB\-\-multiple\fR option requires that an output filename is given.
-This filename is used as prefix, with the event node number appended.
+If multiple devices are recorded, an output filename must be provided.
 .PP
 All devices to be recorded must be provided on the commandline, an example
 invocation is:
 
-.B libinput record \-\-multiple \-o tap-bug /dev/input/event3 /dev/input/event7
+.B libinput record \-o tap-bug /dev/input/event3 /dev/input/event7
 
 Note that when recording multiple devices, only the first device is printed
 immediately, all other devices and their events are printed on exit.
@@ -115,6 +119,7 @@ ndevices: 2
 libinput:
   version: 1.10.0
 system:
+  os: "fedora:26"
   kernel: "4.13.9-200.fc26.x86_64"
   dmi: "dmi:bvnLENOVO:bvrGJET72WW(2.22):bd02/21/2014:svnLENOVO:..."
 devices:
@@ -214,6 +219,9 @@ libinput version
 
 .SS system
 Information about the system
+.TP 8
+.B os: string
+Distribution ID and version, see \fIos-release(5)\fR
 .TP 8
 .B kernel: string
 Kernel version, see \fIuname(1)\fR

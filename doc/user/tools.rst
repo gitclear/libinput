@@ -21,6 +21,8 @@ The most common tools used are:
   see :ref:`here <libinput-record>`
 - ``libinput measure``: measure properties on a kernel device,
   see :ref:`here <libinput-measure>`
+- ``libinput analyze``: analyse event recordings from a kernel device,
+  see :ref:`here <libinput-analyze>`
 - ``libinput quirks``: show quirks assigned to a device, see
   :ref:`here <libinput-quirks>`
 
@@ -301,6 +303,19 @@ measure specific properties on the device. These tools generally measure one
 thing and one thing only and their usage is highly specific to the tool.
 Please see the **libinput-measure(1)** man page for information about what
 tools are available and the man page for each respective tool.
+
+.. _libinput-analyze:
+
+------------------------------------------------------------------------------
+Analyzing device events with libinput analyze
+------------------------------------------------------------------------------
+
+The ``libinput analyze`` tool is a multiplexer for various sub-tools that
+can analyze input events previously recorded from a device.
+
+Please see the **libinput-analyze(1)** man page for information about what
+tools are available and the man page for each respective too.
+
 
 .. _libinput-quirks:
 

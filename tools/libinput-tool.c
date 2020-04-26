@@ -23,19 +23,13 @@
 
 #include "config.h"
 
-#include <errno.h>
 #include <getopt.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <libudev.h>
 
-#include <libinput.h>
-#include <libinput-util.h>
 #include <libinput-version.h>
 
 #include "shared.h"
+
 static void
 usage(void)
 {
@@ -57,6 +51,9 @@ usage(void)
 	       "\n"
 	       "  measure <feature>\n"
 	       "	Measure various device properties. See the man page for more info\n"
+	       "\n"
+	       "  analyze <feature>\n"
+	       "	Analyze device events. See the man page for more info\n"
 	       "\n"
 	       "  record\n"
 	       "	Record event stream from a device node. See the man page for more info\n"

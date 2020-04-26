@@ -456,7 +456,6 @@ END_TEST
 START_TEST(path_add_invalid_path)
 {
 	struct libinput *li;
-	struct libinput_event *event;
 	struct libinput_device *device;
 
 	li = litest_create_context();
@@ -468,8 +467,7 @@ START_TEST(path_add_invalid_path)
 
 	libinput_dispatch(li);
 
-	while ((event = libinput_get_event(li)))
-		ck_abort();
+	litest_assert_empty_queue(li);
 
 	libinput_unref(li);
 }

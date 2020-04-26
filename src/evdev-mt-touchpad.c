@@ -39,7 +39,6 @@
 #define DEFAULT_TRACKPOINT_EVENT_TIMEOUT ms2us(40)
 #define DEFAULT_KEYBOARD_ACTIVITY_TIMEOUT_1 ms2us(200)
 #define DEFAULT_KEYBOARD_ACTIVITY_TIMEOUT_2 ms2us(500)
-#define THUMB_MOVE_TIMEOUT ms2us(300)
 #define FAKE_FINGER_OVERFLOW (1 << 7)
 #define THUMB_IGNORE_SPEED_THRESHOLD 20 /* mm/s */
 
@@ -245,10 +244,12 @@ tp_get_touch(struct tp_dispatch *tp, unsigned int slot)
 static inline unsigned int
 tp_fake_finger_count(struct tp_dispatch *tp)
 {
+	unsigned int fake_touches =
+		tp->fake_touches & ~(FAKE_FINGER_OVERFLOW|0x1);
+
 	/* Only one of BTN_TOOL_DOUBLETAP/TRIPLETAP/... may be set at any
 	 * time */
-	if (__builtin_popcount(
-		       tp->fake_touches & ~(FAKE_FINGER_OVERFLOW|0x1)) > 1)
+	if (fake_touches & (fake_touches - 1))
 		evdev_log_bug_kernel(tp->device,
 				     "Invalid fake finger state %#x\n",
 				     tp->fake_touches);
@@ -352,8 +353,6 @@ tp_begin_touch(struct tp_dispatch *tp, struct tp_touch *t, uint64_t time)
 	t->was_down = true;
 	tp->nfingers_down++;
 	t->palm.time = time;
-	t->thumb.state = THUMB_STATE_NO;
-	t->thumb.first_touch_time = time;
 	t->tap.is_thumb = false;
 	t->tap.is_palm = false;
 	t->speed.exceeded_count = 0;
@@ -526,10 +525,14 @@ tp_process_absolute(struct tp_dispatch *tp,
 		tp->slot = e->value;
 		break;
 	case ABS_MT_TRACKING_ID:
-		if (e->value != -1)
+		if (e->value != -1) {
+			tp->nactive_slots += 1;
 			tp_new_touch(tp, t, time);
-		else
+		} else {
+			assert(tp->nactive_slots >= 1);
+			tp->nactive_slots -= 1;
 			tp_end_sequence(tp, t, time);
+		}
 		break;
 	case ABS_MT_PRESSURE:
 		t->pressure = e->value;
@@ -606,11 +609,14 @@ tp_restore_synaptics_touches(struct tp_dispatch *tp,
 	    (tp->nfingers_down == tp->num_slots && nfake_touches == tp->num_slots))
 		return;
 
-	/* Synaptics devices may end touch 2 on BTN_TOOL_TRIPLETAP
-	 * and start it again on the next frame with different coordinates
-	 * (#91352). We search the touches we have, if there is one that has
-	 * just ended despite us being on tripletap, we move it back to
-	 * update.
+	/* Synaptics devices may end touch 2 on transition to/fro
+	 * BTN_TOOL_TRIPLETAP and start it again on the next frame with
+	 * different coordinates (bz#91352, gitlab#434). We search the
+	 * touches we have, if there is one that has just ended despite us
+	 * being on tripletap, we move it back to update.
+	 *
+	 * Note: we only handle the transition from 2 to 3 touches, not the
+	 * other way round (see gitlab#434)
 	 */
 	for (i = 0; i < tp->num_slots; i++) {
 		struct tp_touch *t = tp_get_touch(tp, i);
@@ -638,6 +644,47 @@ tp_process_fake_touches(struct tp_dispatch *tp,
 	if (tp->device->model_flags &
 	    EVDEV_MODEL_SYNAPTICS_SERIAL_TOUCHPAD)
 		tp_restore_synaptics_touches(tp, time);
+
+	/* ALPS serial touchpads always set 3 slots in the kernel, even
+	 * where they support less than that. So we get BTN_TOOL_TRIPLETAP
+	 * but never slot 2 because our slot count is wrong.
+	 * This also means that the third touch falls through the cracks and
+	 * is ignored.
+	 *
+	 * See https://gitlab.freedesktop.org/libinput/libinput/issues/408
+	 *
+	 * All touchpad devices have at least one slot so we only do this
+	 * for 2 touches or higher.
+	 *
+	 * There's an bug in libevdev < 1.9.0 affecting slots after a
+	 * SYN_DROPPED. Where a user release one or more touches during
+	 * SYN_DROPPED and places new ones on the touchpad, we may end up
+	 * with fake touches but no active slots.
+	 * So let's check for nactive_slots > 0 to make sure we don't lose
+	 * all fingers. That's a workaround only, this must be fixed in
+	 * libevdev.
+	 *
+	 * For a long explanation of what happens, see
+	 * https://gitlab.freedesktop.org/libevdev/libevdev/merge_requests/19
+	 */
+	if (tp->device->model_flags & EVDEV_MODEL_ALPS_SERIAL_TOUCHPAD &&
+	    nfake_touches > 1 && tp->has_mt &&
+	    tp->nactive_slots > 0 &&
+	    nfake_touches > tp->nactive_slots &&
+	    tp->nactive_slots < tp->num_slots) {
+		evdev_log_bug_kernel(tp->device,
+				     "Wrong slot count (%d), reducing to %d\n",
+				     tp->num_slots,
+				     tp->nactive_slots);
+		/* This should be safe since we fill the slots from the
+		 * first one so hiding the excessive slots shouldn't matter.
+		 * There are sequences where we could accidentally lose an
+		 * actual touch point but that requires specially crafted
+		 * sequences and let's deal with that when it happens.
+		 */
+		tp->num_slots = tp->nactive_slots;
+	}
+
 
 	start = tp->has_mt ? tp->num_slots : 0;
 	for (i = start; i < tp->ntouches; i++) {
@@ -772,7 +819,7 @@ tp_touch_active(const struct tp_dispatch *tp, const struct tp_touch *t)
 	return (t->state == TOUCH_BEGIN || t->state == TOUCH_UPDATE) &&
 		t->palm.state == PALM_NONE &&
 		!t->pinned.is_pinned &&
-		t->thumb.state == THUMB_STATE_NO &&
+		t->thumb.state != THUMB_STATE_YES &&
 		tp_button_touch_active(tp, t) &&
 		tp_edge_scroll_touch_active(tp, t);
 }
@@ -1160,23 +1207,17 @@ tp_thumb_detect(struct tp_dispatch *tp, struct tp_touch *t, uint64_t time)
 {
 	enum tp_thumb_state state = t->thumb.state;
 
-	/* once a thumb, always a thumb */
+	/* once a thumb, always a thumb, once ruled out always ruled out */
 	if (!tp->thumb.detect_thumbs ||
-	    t->thumb.state == THUMB_STATE_YES)
+	    t->thumb.state != THUMB_STATE_MAYBE)
 		return;
 
-	/* A very large touch below the upper thumb line = definite thumb */
-	if (t->pressure > tp->thumb.pressure_threshold &&
-	    t->point.y >= tp->thumb.upper_thumb_line) {
-		t->thumb.state = THUMB_STATE_YES;
+	if (t->point.y < tp->thumb.upper_thumb_line) {
+		/* if a potential thumb is above the line, it won't ever
+		 * label as thumb */
+		t->thumb.state = THUMB_STATE_NO;
 		goto out;
 	}
-
-	/* If a thumb wasn't identified by size above, nor as MAYBE a thumb
-	 * due to position, no need for the threshold check
-	 */
-	if (t->thumb.state == THUMB_STATE_NO)
-		return;
 
 	/* If the thumb moves by more than 7mm, it's not a resting thumb */
 	if (t->state == TOUCH_BEGIN) {
@@ -1184,50 +1225,12 @@ tp_thumb_detect(struct tp_dispatch *tp, struct tp_touch *t, uint64_t time)
 	} else if (t->state == TOUCH_UPDATE) {
 		struct device_float_coords delta;
 		struct phys_coords mm;
-		double threshold = 0.0;
-
-		/* If the thumb moves significantly, it's not a resting thumb.
-		 * Set a context-based threshold to define "significantly."
-		 * In addition to context from tp_detect_thumb_by_position,
-		 * a touch is more likely to be a thumb based on a combination
-		 * of two factors: position on the touchpad, and time lingering
-		 * in one place. Smoothly combine these factors to accommodate
-		 * a resting thumb anywhere, while maintaining gesture response.
-		 *
-		 * Since we're marking likely thumbs and not definite thumbs, any
-		 * mistakes are quickly corrected if the user moves the touch.
-		 */
-
-		/* Start with position: above the upper thumb line, use 0mm
-		 * threshold. For touches below the upper thumb line, raise this
-		 * smoothly to 10mm at the lower line and >10mm below.
-		 */
-		if (t->point.y > tp->thumb.upper_thumb_line)
-			threshold = threshold + (10.0 *
-			 (t->point.y - tp->thumb.upper_thumb_line) /
-			 (tp->thumb.lower_thumb_line - tp->thumb.upper_thumb_line));
-
-		/* Next, adjust based on lingering time. Add 1mm / 100msec to
-		 * threshold to account for resting thumbs, up to 15mm maximum.
-		 */
-		threshold = fmin(15.0, threshold +
-		                ((time - t->thumb.first_touch_time) /
-		                 (float)(100 * 1000)));
 
 		delta = device_delta(t->point, t->thumb.initial);
 		mm = tp_phys_delta(tp, delta);
-
-		/* If movement is above the threshold, (probably) not a thumb. If
-		 * we've misidentified a thumb as a finger, this will be corrected
-		 * on a subsequent touch >25mm above this one.
-		 */
-		if (length_in_mm(mm) > threshold) {
+		if (length_in_mm(mm) > 7) {
 			t->thumb.state = THUMB_STATE_NO;
-
-			/* If a gesture is in progress, cancel it so
-			 * the thumb is recognized next frame.
-			 */
-			tp_gesture_cancel(tp, time);
+			goto out;
 		}
 	}
 
@@ -1631,101 +1634,49 @@ tp_detect_jumps(const struct tp_dispatch *tp,
 }
 
 static void
-tp_detect_thumb_by_position(struct tp_dispatch *tp, uint64_t time)
+tp_detect_thumb_while_moving(struct tp_dispatch *tp)
 {
 	struct tp_touch *t;
 	struct tp_touch *first = NULL,
-			*second = NULL,
-			*newest = NULL;
+			*second = NULL;
 	struct device_coords distance;
 	struct phys_coords mm;
-	unsigned int speed_exceeded_count = 0;
 
-	/* Get the first and second bottom-most touches, the max speed exceeded
-	 * count overall, and the newest touch (or one of them, if more).
-	 */
 	tp_for_each_touch(tp, t) {
 		if (t->state == TOUCH_NONE ||
 		    t->state == TOUCH_HOVERING)
 			continue;
 
-		if (t->state == TOUCH_BEGIN)
-			newest = t;
-
-		speed_exceeded_count = max(speed_exceeded_count,
-		                           t->speed.exceeded_count);
-
-		if (!first) {
+		if (t->state != TOUCH_BEGIN)
 			first = t;
-			continue;
-		}
-
-		if (t->point.y > first->point.y) {
-			second = first;
-			first = t;
-			continue;
-		}
-
-		if (!second || t->point.y > second->point.y ) {
+		else
 			second = t;
-		}
+
+		if (first && second)
+			break;
 	}
 
 	assert(first);
 	assert(second);
 
-	distance.x = abs(first->point.x - second->point.x);
-	distance.y = abs(first->point.y - second->point.y);
-	mm = evdev_device_unit_delta_to_mm(tp->device, &distance);
+	if (tp->scroll.method == LIBINPUT_CONFIG_SCROLL_2FG) {
+		/* If the second finger comes down next to the other one, we
+		 * assume this is a scroll motion.
+		 */
+		distance.x = abs(first->point.x - second->point.x);
+		distance.y = abs(first->point.y - second->point.y);
+		mm = evdev_device_unit_delta_to_mm(tp->device, &distance);
 
-	/* If there's a new touch and an existing touch is moving quickly while
-	 * 2fg scrolling is disabled OR the touches are far apart, the new touch
-	 * is a thumb.
-	 */
-	if (newest &&
-	    tp->nfingers_down == 2 &&
-	    speed_exceeded_count > 5 &&
-	     (tp->scroll.method != LIBINPUT_CONFIG_SCROLL_2FG ||
-		  mm.x > 25.0)) {
-		evdev_log_debug(tp->device,
-				"touch %d is speed-based thumb\n",
-				newest->index);
-		newest->thumb.state = THUMB_STATE_YES;
+		if (mm.x <= 25 && mm.y <= 15)
+			return;
 	}
 
-	/* Don't use other thumb detection if not enabled for the device */
-	if (!tp->thumb.detect_thumbs)
-		return;
-
-	/* Assign thumb status based on if one of the touches is a lot more
-	 * than a finger's width lower than the others. If the hardware doesn't
-	 * support enough slots, or can detect size or pressure, skip this.
-	 */
-	if (mm.y > 25.0 &&
-	    first->thumb.state != THUMB_STATE_YES &&
-	    tp->pressure.use_pressure == false &&
-	    tp->touch_size.use_touch_size == false &&
-	    tp->nfingers_down <= tp->num_slots) {
-		evdev_log_debug(tp->device,
-				"touch %d >25mm lower; likely a thumb\n",
-				first->index);
-		first->thumb.state = THUMB_STATE_MAYBE;
-		first->thumb.initial = first->point;
-	}
-
-	/* If we have more touches than the hardware supports, we cannot
-	 * rely on position to detect thumbs. When we see touch number
-	 * (num_slots)+1, mark any MAYBE thumbs as NO, even if detected
-	 * earlier. This allows for position-based thumb detection when
-	 * possible, and accurate touch count otherwise.
-	 */
-	if (tp->nfingers_down > tp->num_slots) {
-		tp_for_each_touch(tp, t) {
-			if (t->thumb.state == THUMB_STATE_MAYBE)
-				t->thumb.state = THUMB_STATE_NO;
-		}
-	}
-
+	/* Finger are too far apart or 2fg scrolling is disabled, mark
+	 * second finger as thumb */
+	evdev_log_debug(tp->device,
+			"touch %d is speed-based thumb\n",
+			second->index);
+	second->thumb.state = THUMB_STATE_YES;
 }
 
 /**
@@ -1902,14 +1853,15 @@ tp_process_state(struct tp_dispatch *tp, uint64_t time)
 
 		if (tp_detect_jumps(tp, t, time)) {
 			if (!tp->semi_mt)
-				evdev_log_bug_kernel(tp->device,
-					       "Touch jump detected and discarded.\n"
-					       "See %stouchpad-jumping-cursors.html for details\n",
-					       HTTP_DOC_LINK);
+				evdev_log_bug_kernel_ratelimit(tp->device,
+						&tp->jump.warning,
+					        "Touch jump detected and discarded.\n"
+					        "See %stouchpad-jumping-cursors.html for details\n",
+					        HTTP_DOC_LINK);
 			tp_motion_history_reset(t);
 		}
 
-		tp_thumb_detect(tp, t, time);
+		tp_thumb_update_touch(tp, t, time);
 		tp_palm_detect(tp, t, time);
 		tp_detect_wobbling(tp, t, time);
 		tp_motion_hysteresis(tp, t);
@@ -1926,7 +1878,7 @@ tp_process_state(struct tp_dispatch *tp, uint64_t time)
 		 * never count down. Let's see how far we get with that.
 		 */
 		if (t->speed.last_speed > THUMB_IGNORE_SPEED_THRESHOLD) {
-			if (t->speed.exceeded_count < 10)
+			if (t->speed.exceeded_count < 15)
 				t->speed.exceeded_count++;
 		} else if (t->speed.exceeded_count > 0) {
 				t->speed.exceeded_count--;
@@ -1942,16 +1894,12 @@ tp_process_state(struct tp_dispatch *tp, uint64_t time)
 		}
 	}
 
-	/* Whenever a new touch is added, it has the potential to either BE a
-	 * thumb itself, OR reveal by context that an existing touch WAS already
-	 * a thumb, whether we detected it or not.
-	 *
-	 * On registering a 2nd/3rd/... additional touch, detect thumbs using
-	 * position.
-	 */
+	/* If we have one touch that exceeds the speed and we get a new
+	 * touch down while doing that, the second touch is a thumb */
 	if (have_new_touch &&
-	    tp->nfingers_down >= 2)
-		tp_detect_thumb_by_position(tp, time);
+	    tp->nfingers_down == 2 &&
+	    speed_exceeded_count > 5)
+		tp_detect_thumb_while_moving(tp);
 
 	if (restart_filter)
 		filter_restart(tp->device->pointer.filter, tp, time);
@@ -1998,6 +1946,9 @@ tp_post_process_state(struct tp_dispatch *tp, uint64_t time)
 	tp->buttons.old_state = tp->buttons.state;
 
 	tp->queued = TOUCHPAD_EVENT_NONE;
+
+	if (tp->nfingers_down == 0)
+		tp_thumb_reset(tp);
 
 	tp_tap_post_process_state(tp);
 }
@@ -2190,6 +2141,8 @@ tp_clear_state(struct tp_dispatch *tp)
 	 *
 	 * Then lift all touches so the touchpad is in a neutral state.
 	 *
+	 * Then reset thumb state.
+	 *
 	 */
 	tp_release_all_buttons(tp, now);
 	tp_release_all_taps(tp, now);
@@ -2198,6 +2151,8 @@ tp_clear_state(struct tp_dispatch *tp)
 		tp_end_sequence(tp, t, now);
 	}
 	tp_release_fake_touches(tp);
+
+	tp_thumb_reset(tp);
 
 	tp_handle_state(tp, now);
 }
@@ -2247,6 +2202,7 @@ tp_sync_touch(struct tp_dispatch *tp,
 	      int slot)
 {
 	struct libevdev *evdev = device->evdev;
+	int tracking_id;
 
 	if (!libevdev_fetch_slot_value(evdev,
 				       slot,
@@ -2275,6 +2231,13 @@ tp_sync_touch(struct tp_dispatch *tp,
 				  slot,
 				  ABS_MT_TOUCH_MINOR,
 				  &t->minor);
+
+	if (libevdev_fetch_slot_value(evdev,
+				      slot,
+				      ABS_MT_TRACKING_ID,
+				      &tracking_id) &&
+	    tracking_id != -1)
+		tp->nactive_slots++;
 }
 
 static void
@@ -3530,70 +3493,6 @@ tp_init_sendevents(struct tp_dispatch *tp,
 			    tp_keyboard_timeout, tp);
 }
 
-static void
-tp_init_thumb(struct tp_dispatch *tp)
-{
-	struct evdev_device *device = tp->device;
-	double w = 0.0, h = 0.0;
-	struct device_coords edges;
-	struct phys_coords mm = { 0.0, 0.0 };
-	uint32_t threshold;
-	struct quirks_context *quirks;
-	struct quirks *q;
-
-	if (!tp->buttons.is_clickpad)
-		return;
-
-	/* if the touchpad is less than 50mm high, skip thumb detection.
-	 * it's too small to meaningfully interact with a thumb on the
-	 * touchpad */
-	evdev_device_get_size(device, &w, &h);
-	if (h < 50)
-		return;
-
-	tp->thumb.detect_thumbs = true;
-	tp->thumb.use_pressure = false;
-	tp->thumb.pressure_threshold = INT_MAX;
-
-	/* detect thumbs by pressure in the bottom 15mm, detect thumbs by
-	 * lingering in the bottom 8mm */
-	mm.y = h * 0.85;
-	edges = evdev_device_mm_to_units(device, &mm);
-	tp->thumb.upper_thumb_line = edges.y;
-
-	mm.y = h * 0.92;
-	edges = evdev_device_mm_to_units(device, &mm);
-	tp->thumb.lower_thumb_line = edges.y;
-
-	quirks = evdev_libinput_context(device)->quirks;
-	q = quirks_fetch_for_device(quirks, device->udev_device);
-
-	if (libevdev_has_event_code(device->evdev, EV_ABS, ABS_MT_PRESSURE)) {
-		if (quirks_get_uint32(q,
-				      QUIRK_ATTR_THUMB_PRESSURE_THRESHOLD,
-				      &threshold)) {
-			tp->thumb.use_pressure = true;
-			tp->thumb.pressure_threshold = threshold;
-		}
-	}
-
-	if (libevdev_has_event_code(device->evdev, EV_ABS, ABS_MT_TOUCH_MAJOR)) {
-		if (quirks_get_uint32(q,
-				      QUIRK_ATTR_THUMB_SIZE_THRESHOLD,
-				      &threshold)) {
-			tp->thumb.use_size = true;
-			tp->thumb.size_threshold = threshold;
-		}
-	}
-
-	quirks_unref(q);
-
-	evdev_log_debug(device,
-			"thumb: enabled thumb detection%s%s\n",
-			tp->thumb.use_pressure ? " (+pressure)" : "",
-			tp->thumb.use_size ? " (+size)" : "");
-}
-
 static bool
 tp_pass_sanity_check(struct tp_dispatch *tp,
 		     struct evdev_device *device)
@@ -3814,6 +3713,9 @@ tp_init(struct tp_dispatch *tp,
 
 	if (!use_touch_size)
 		tp_init_pressure(tp, device);
+
+	/* 5 warnings per 2 hours should be enough */
+	ratelimit_init(&tp->jump.warning, s2us(2 * 60 * 60), 5);
 
 	/* Set the dpi to that of the x axis, because that's what we normalize
 	   to when needed*/

@@ -5,6 +5,12 @@ MatchName=*Synaptics*
 MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPad*:*
 AttrThumbPressureThreshold=100
 
+[Lenovo ThinkPad 13 2nd Generation TrackPoint]
+MatchUdevType=pointingstick
+MatchName=*ETPS/2 Elantech TrackPoint*
+MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPad132ndGen*
+AttrTrackpointMultiplier=1.75
+
 [Lenovo x230 Touchpad]
 MatchName=*SynPS/2 Synaptics TouchPad
 MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPadX230*
@@ -30,6 +36,16 @@ MatchName=Elan Touchpad
 MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPadT480s*
 ModelLenovoT480sTouchpad=1
 
+[Lenovo T490s Touchpad]
+MatchName=Elan Touchpad
+MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPadT490s*
+ModelLenovoT490sTouchpad=1
+
+[Lenovo T490s Trackpoint]
+MatchName=*TPPS/2 IBM TrackPoint
+MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPadT490s:*
+AttrTrackpointMultiplier=0.4
+
 [Lenovo L380 Touchpad]
 MatchName=Elan Touchpad
 MatchDMIModalias=dmi:*svnLENOVO:*:pvrThinkPadL380*
@@ -44,6 +60,11 @@ AttrTrackpointMultiplier=1.25
 MatchName=*TPPS/2 IBM TrackPoint
 MatchDMIModalias=dmi:*svnLENOVO:*pvrThinkPadX20??:*
 AttrTrackpointMultiplier=1.25
+
+[Lenovo X230 Trackpoint]
+MatchName=*TPPS/2 IBM TrackPoint
+MatchDMIModalias=dmi:*svnLENOVO:*pvrThinkPadX230:*
+AttrTrackpointMultiplier=0.25
 
 [Lenovo P50 Touchpad]
 MatchName=SynPS/2 Synaptics TouchPad
@@ -139,6 +160,13 @@ ModelTabletModeNoSuspend=1
 [Lenovo X230 Tablet]
 MatchName=AT Translated Set 2 keyboard
 MatchDMIModalias=dmi:*svnLENOVO:*pvrThinkPadX230Tablet:*
+ModelTabletModeNoSuspend=1
+
+# Special bezel button deactivation with
+# keyboard also applies to X200 Tablet
+[Lenovo X200 Tablet]
+MatchName=AT Translated Set 2 keyboard
+MatchDMIModalias=dmi:*svnLENOVO:*pvrThinkPadX200Tablet:*
 ModelTabletModeNoSuspend=1
 
 # Lenovo MIIX 720 comes with a detachable keyboard. We must not disable

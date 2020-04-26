@@ -8,7 +8,7 @@ libinput\-measure \- measure properties of devices
 The
 .B "libinput measure"
 tool measures properties of one (or more) devices. Depending on what is to
-be measured, this too may not create a libinput context.
+be measured, this tool may not create a libinput context.
 .PP
 This is a debugging tool only, its output may change at any time. Do not
 rely on the output.
@@ -28,7 +28,10 @@ Measure touch fuzz to avoid pointer jitter
 .B libinput\-measure\-touch\-size(1)
 Measure touch size and orientation
 .TP 8
-.B libinput\-measure\-touchpad\-tap\-time(1)
+.B libinput\-measure\-touchpad\-size(1)
+Measure the size of a touchpad
+.TP 8
+.B libinput\-measure\-touchpad\-tap(1)
 Measure tap-to-click time
 .TP 8
 .B libinput\-measure\-touchpad\-pressure(1)

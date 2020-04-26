@@ -94,7 +94,8 @@ find_tree_distance(struct udev_device *a, struct udev_device *b)
 static void
 wacom_handle_ekr(struct udev_device *device,
 		 int *vendor_id,
-		 int *product_id)
+		 int *product_id,
+		 char **phys_attr)
 {
 	struct udev *udev;
 	struct udev_enumerate *e;
@@ -109,7 +110,7 @@ wacom_handle_ekr(struct udev_device *device,
 
 	udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(e)) {
 		struct udev_device *d;
-		const char *path;
+		const char *path, *phys;
 		const char *pidstr, *vidstr;
 		int pid, vid, dist;
 
@@ -124,8 +125,9 @@ wacom_handle_ekr(struct udev_device *device,
 
 		vidstr = udev_device_get_property_value(d, "ID_VENDOR_ID");
 		pidstr = udev_device_get_property_value(d, "ID_MODEL_ID");
+		phys = udev_device_get_sysattr_value(d, "phys");
 
-		if (vidstr && pidstr &&
+		if (vidstr && pidstr && phys &&
 		    safe_atoi_base(vidstr, &vid, 16) &&
 		    safe_atoi_base(pidstr, &pid, 16) &&
 		    vid == VENDOR_ID_WACOM &&
@@ -135,6 +137,9 @@ wacom_handle_ekr(struct udev_device *device,
 				*vendor_id = vid;
 				*product_id = pid;
 				best_dist = dist;
+
+				free(*phys_attr);
+				*phys_attr = strdup(phys);
 			}
 		}
 
@@ -202,12 +207,15 @@ int main(int argc, char **argv)
 		   &version) != 4) {
 		snprintf(group, sizeof(group), "%s:%s", product, phys);
 	} else {
+	    char *physmatch = NULL;
+
 #if HAVE_LIBWACOM_GET_PAIRED_DEVICE
 	    if (vendor_id == VENDOR_ID_WACOM) {
 		    if (product_id == PRODUCT_ID_WACOM_EKR)
 			    wacom_handle_ekr(device,
 					     &vendor_id,
-					     &product_id);
+					     &product_id,
+					     &physmatch);
 		    /* This is called for the EKR as well */
 		    wacom_handle_paired(device,
 					&vendor_id,
@@ -220,7 +228,9 @@ int main(int argc, char **argv)
 		     bustype,
 		     vendor_id,
 		     product_id,
-		     phys);
+		     physmatch ? physmatch : phys);
+
+	    free(physmatch);
 	}
 
 	str = strstr(group, "/input");
@@ -237,7 +247,7 @@ int main(int argc, char **argv)
 	if (str && str > strrchr(group, '-'))
 		*str = '\0';
 
-	printf("%s\n", group);
+	printf("LIBINPUT_DEVICE_GROUP=%s\n", group);
 
 	rc = 0;
 out:

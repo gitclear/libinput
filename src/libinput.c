@@ -130,6 +130,7 @@ event_type_to_str(enum libinput_event_type type)
 	CASE_RETURN_STRING(LIBINPUT_EVENT_TABLET_PAD_BUTTON);
 	CASE_RETURN_STRING(LIBINPUT_EVENT_TABLET_PAD_RING);
 	CASE_RETURN_STRING(LIBINPUT_EVENT_TABLET_PAD_STRIP);
+	CASE_RETURN_STRING(LIBINPUT_EVENT_TABLET_PAD_KEY);
 	CASE_RETURN_STRING(LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN);
 	CASE_RETURN_STRING(LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE);
 	CASE_RETURN_STRING(LIBINPUT_EVENT_GESTURE_SWIPE_END);
@@ -218,6 +219,10 @@ struct libinput_event_tablet_pad {
 		uint32_t number;
 		enum libinput_button_state state;
 	} button;
+	struct {
+		uint32_t code;
+		enum libinput_key_state state;
+	} key;
 	struct {
 		enum libinput_tablet_pad_ring_axis_source source;
 		double position;
@@ -425,7 +430,8 @@ libinput_event_get_tablet_pad_event(struct libinput_event *event)
 			   NULL,
 			   LIBINPUT_EVENT_TABLET_PAD_RING,
 			   LIBINPUT_EVENT_TABLET_PAD_STRIP,
-			   LIBINPUT_EVENT_TABLET_PAD_BUTTON);
+			   LIBINPUT_EVENT_TABLET_PAD_BUTTON,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
 
 	return (struct libinput_event_tablet_pad *) event;
 }
@@ -1914,7 +1920,8 @@ libinput_event_tablet_tool_destroy(struct libinput_event_tablet_tool *event)
 static void
 libinput_event_tablet_pad_destroy(struct libinput_event_tablet_pad *event)
 {
-	libinput_tablet_pad_mode_group_unref(event->mode_group);
+	if (event->base.type != LIBINPUT_EVENT_TABLET_PAD_KEY)
+		libinput_tablet_pad_mode_group_unref(event->mode_group);
 }
 
 LIBINPUT_EXPORT void
@@ -1934,6 +1941,7 @@ libinput_event_destroy(struct libinput_event *event)
 	case LIBINPUT_EVENT_TABLET_PAD_RING:
 	case LIBINPUT_EVENT_TABLET_PAD_STRIP:
 	case LIBINPUT_EVENT_TABLET_PAD_BUTTON:
+	case LIBINPUT_EVENT_TABLET_PAD_KEY:
 		libinput_event_tablet_pad_destroy(
 		   libinput_event_get_tablet_pad_event(event));
 		break;
@@ -1959,7 +1967,7 @@ open_restricted(struct libinput *libinput,
 void
 close_restricted(struct libinput *libinput, int fd)
 {
-	return libinput->interface->close_restricted(fd, libinput->user_data);
+	libinput->interface->close_restricted(fd, libinput->user_data);
 }
 
 bool
@@ -2767,6 +2775,28 @@ tablet_pad_notify_strip(struct libinput_device *device,
 			  &strip_event->base);
 }
 
+void
+tablet_pad_notify_key(struct libinput_device *device,
+		      uint64_t time,
+		      int32_t key,
+		      enum libinput_key_state state)
+{
+	struct libinput_event_tablet_pad *key_event;
+
+	key_event = zalloc(sizeof *key_event);
+
+	*key_event = (struct libinput_event_tablet_pad) {
+		.time = time,
+		.key.code = key,
+		.key.state = state,
+	};
+
+	post_device_event(device,
+			  time,
+			  LIBINPUT_EVENT_TABLET_PAD_KEY,
+			  &key_event->base);
+}
+
 static void
 gesture_notify(struct libinput_device *device,
 	       uint64_t time,
@@ -3116,6 +3146,13 @@ libinput_device_switch_has_switch(struct libinput_device *device,
 }
 
 LIBINPUT_EXPORT int
+libinput_device_tablet_pad_has_key(struct libinput_device *device, uint32_t code)
+{
+	return evdev_device_tablet_pad_has_key((struct evdev_device *)device,
+					       code);
+}
+
+LIBINPUT_EXPORT int
 libinput_device_tablet_pad_get_num_buttons(struct libinput_device *device)
 {
 	return evdev_device_tablet_pad_get_num_buttons((struct evdev_device *)device);
@@ -3418,6 +3455,28 @@ libinput_event_tablet_pad_get_button_state(struct libinput_event_tablet_pad *eve
 	return event->button.state;
 }
 
+LIBINPUT_EXPORT uint32_t
+libinput_event_tablet_pad_get_key(struct libinput_event_tablet_pad *event)
+{
+	require_event_type(libinput_event_get_context(&event->base),
+			   event->base.type,
+			   0,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
+
+	return event->key.code;
+}
+
+LIBINPUT_EXPORT enum libinput_key_state
+libinput_event_tablet_pad_get_key_state(struct libinput_event_tablet_pad *event)
+{
+	require_event_type(libinput_event_get_context(&event->base),
+			   event->base.type,
+			   LIBINPUT_KEY_STATE_RELEASED,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
+
+	return event->key.state;
+}
+
 LIBINPUT_EXPORT unsigned int
 libinput_event_tablet_pad_get_mode(struct libinput_event_tablet_pad *event)
 {
@@ -3452,7 +3511,8 @@ libinput_event_tablet_pad_get_time(struct libinput_event_tablet_pad *event)
 			   0,
 			   LIBINPUT_EVENT_TABLET_PAD_RING,
 			   LIBINPUT_EVENT_TABLET_PAD_STRIP,
-			   LIBINPUT_EVENT_TABLET_PAD_BUTTON);
+			   LIBINPUT_EVENT_TABLET_PAD_BUTTON,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
 
 	return us2ms(event->time);
 }
@@ -3465,7 +3525,8 @@ libinput_event_tablet_pad_get_time_usec(struct libinput_event_tablet_pad *event)
 			   0,
 			   LIBINPUT_EVENT_TABLET_PAD_RING,
 			   LIBINPUT_EVENT_TABLET_PAD_STRIP,
-			   LIBINPUT_EVENT_TABLET_PAD_BUTTON);
+			   LIBINPUT_EVENT_TABLET_PAD_BUTTON,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
 
 	return event->time;
 }
@@ -3478,7 +3539,8 @@ libinput_event_tablet_pad_get_base_event(struct libinput_event_tablet_pad *event
 			   NULL,
 			   LIBINPUT_EVENT_TABLET_PAD_RING,
 			   LIBINPUT_EVENT_TABLET_PAD_STRIP,
-			   LIBINPUT_EVENT_TABLET_PAD_BUTTON);
+			   LIBINPUT_EVENT_TABLET_PAD_BUTTON,
+			   LIBINPUT_EVENT_TABLET_PAD_KEY);
 
 	return &event->base;
 }
@@ -4149,6 +4211,45 @@ libinput_device_config_scroll_get_default_button(struct libinput_device *device)
 	return device->config.scroll_method->get_default_button(device);
 }
 
+LIBINPUT_EXPORT enum libinput_config_status
+libinput_device_config_scroll_set_button_lock(struct libinput_device *device,
+					      enum libinput_config_scroll_button_lock_state state)
+{
+	if ((libinput_device_config_scroll_get_methods(device) &
+	     LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) == 0)
+		return LIBINPUT_CONFIG_STATUS_UNSUPPORTED;
+
+	switch (state) {
+	case LIBINPUT_CONFIG_SCROLL_BUTTON_LOCK_ENABLED:
+	case LIBINPUT_CONFIG_SCROLL_BUTTON_LOCK_DISABLED:
+		break;
+	default:
+		return LIBINPUT_CONFIG_STATUS_INVALID;
+	}
+
+	return device->config.scroll_method->set_button_lock(device, state);
+}
+
+LIBINPUT_EXPORT enum libinput_config_scroll_button_lock_state
+libinput_device_config_scroll_get_button_lock(struct libinput_device *device)
+{
+	if ((libinput_device_config_scroll_get_methods(device) &
+	     LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) == 0)
+		return LIBINPUT_CONFIG_SCROLL_BUTTON_LOCK_DISABLED;
+
+	return device->config.scroll_method->get_button_lock(device);
+}
+
+LIBINPUT_EXPORT enum libinput_config_scroll_button_lock_state
+libinput_device_config_scroll_get_default_button_lock(struct libinput_device *device)
+{
+	if ((libinput_device_config_scroll_get_methods(device) &
+	     LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) == 0)
+		return LIBINPUT_CONFIG_SCROLL_BUTTON_LOCK_DISABLED;
+
+	return device->config.scroll_method->get_default_button_lock(device);
+}
+
 LIBINPUT_EXPORT int
 libinput_device_config_dwt_is_available(struct libinput_device *device)
 {
@@ -4257,6 +4358,9 @@ libinput_libwacom_ref(struct libinput *li)
 void
 libinput_libwacom_unref(struct libinput *li)
 {
+	if (!li->libwacom.db)
+		return;
+
 	assert(li->libwacom.refcount >= 1);
 
 	if (--li->libwacom.refcount == 0) {

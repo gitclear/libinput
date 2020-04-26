@@ -27,6 +27,7 @@
 #include "litest-int.h"
 
 static struct input_event proximity_in[] = {
+	/* Note: this device does not send BTN_TOOL_PEN */
 	{ .type = EV_ABS, .code = ABS_X, .value = LITEST_AUTO_ASSIGN },
 	{ .type = EV_ABS, .code = ABS_Y, .value = LITEST_AUTO_ASSIGN },
 	/* Note: this device does not send tilt, despite claiming it has it */
@@ -140,7 +141,7 @@ static int events[] = {
 
 TEST_DEVICE("aiptek-tablet",
 	.type = LITEST_AIPTEK,
-	.features = LITEST_TABLET | LITEST_HOVER,
+	.features = LITEST_TABLET | LITEST_HOVER | LITEST_FORCED_PROXOUT,
 	.interface = &interface,
 
 	.name = "Aiptek",

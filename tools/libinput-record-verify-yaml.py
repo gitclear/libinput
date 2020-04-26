@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # vim: set expandtab shiftwidth=4:
 # -*- Mode: python; coding: utf-8; indent-tabs-mode: nil -*- */
 #
@@ -51,6 +51,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 try:
                     libinput = e['libinput']
@@ -59,7 +61,7 @@ class TestYaml(unittest.TestCase):
 
                 for ev in libinput:
                     if (filter is None or ev['type'] == filter or
-                        isinstance(filter, list) and ev['type'] in filter):
+                            isinstance(filter, list) and ev['type'] in filter):
                         yield ev
 
     def test_sections_exist(self):
@@ -183,6 +185,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 self.assertTrue('evdev' in e or 'libinput' in e)
 
@@ -190,6 +194,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 try:
                     evdev = e['evdev']
@@ -210,6 +216,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 try:
                     evdev = e['evdev']
@@ -222,6 +230,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 try:
                     libinput = e['libinput']
@@ -373,6 +383,8 @@ class TestYaml(unittest.TestCase):
         devices = self.yaml['devices']
         for d in devices:
             events = d['events']
+            if not events:
+                raise unittest.SkipTest()
             for e in events:
                 try:
                     evdev = e['libinput']
@@ -620,7 +632,8 @@ class TestYaml(unittest.TestCase):
                 self.assertTrue(isinstance(wd, 1))
                 self.assertGreaterEqual(wd, 0.0)
 
-                def sign(x): (1, -1)[x < 0]
+                def sign(x):
+                    (1, -1)[x < 0]
                 self.assertTrue(sign(w), sign(wd))
             except KeyError:
                 pass
@@ -645,10 +658,11 @@ if __name__ == '__main__':
     parser.add_argument('recording', metavar='recorded-file.yaml',
                         type=str, help='Path to device recording')
     parser.add_argument('--verbose', action='store_true')
-    args = parser.parse_args()
+    args, remainder = parser.parse_known_args()
     TestYaml.filename = args.recording
     verbosity = 1
     if args.verbose:
         verbosity = 3
-    del sys.argv[1:]
-    unittest.main(verbosity=verbosity)
+
+    argv = [sys.argv[0], *remainder]
+    unittest.main(argv=argv, verbosity=verbosity)

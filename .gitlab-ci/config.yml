@@ -1,0 +1,76 @@
+# This file contains the configuration for the gitlab ci.
+# See the .gitlab-ci/generate-gitlab-ci.py file for more info
+#
+
+# We're happy to rebuild all containers when one changes.
+.default_tag: &default_tag '2020-03-17.0'
+
+distributions:
+  - name: fedora
+    tag: *default_tag
+    versions:
+      - '30'
+      - '31'
+      - '32'
+    want_qemu: true
+    use_for_custom_build_tests: true
+  - name: ubuntu
+    tag: *default_tag
+    versions:
+      - '19.10'
+  - name: arch
+    tag: *default_tag
+    versions:
+      - 'rolling'
+  - name: alpine
+    tag: *default_tag
+    versions:
+      - 'latest'
+    build:
+      extra_variables:
+        - "MESON_ARGS: '-Ddocumentation=false' # alpine does not have python-recommonmark"
+        # We don't run the tests on alpine. The litest-selftest fails
+        # for any tcase_add_exit_test/tcase_add_test_raise_signal
+        # but someone more invested in musl will have to figure that out.
+        - "MESON_TEST_ARGS: '' # litest-selftest fails on musl"
+  - name: freebsd
+    tag: *default_tag
+    does_not_have_ci_templates: true
+
+test_suites:
+  - name: touchpad
+    suites: 
+      touchpad
+  - name: tap 
+    suites: 
+      tap
+  - name: tablet 
+    suites: 
+      tablet
+  - name: gestures-device 
+    suites: 
+      gestures 
+      device
+  - name: others
+    suites: 
+      context
+      config
+      misc
+      events
+      totem
+      udev
+      lid
+      log
+      timer
+      tablet-mode
+      quirks
+      trackball
+      pad
+      path
+      keyboard
+      switch
+      touch
+      trackpoint
+  - name: pointer
+    suites: 
+      pointer

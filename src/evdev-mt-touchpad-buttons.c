@@ -23,13 +23,12 @@
 
 #include "config.h"
 
-#include <errno.h>
 #include <limits.h>
 #include <math.h>
 #include <string.h>
-#include <unistd.h>
 #include "linux/input.h"
 
+#include "util-input-event.h"
 #include "evdev-mt-touchpad.h"
 
 #define DEFAULT_BUTTON_ENTER_TIMEOUT ms2us(100)
@@ -37,10 +36,8 @@
 
 /*****************************************
  * BEFORE YOU EDIT THIS FILE, look at the state diagram in
- * doc/touchpad-softbutton-state-machine.svg, or online at
- * https://drive.google.com/file/d/0B1NwWmji69nocUs1cVJTbkdwMFk/edit?usp=sharing
- * (it's a http://draw.io diagram)
- *
+ * doc/touchpad-softbutton-state-machine.svg (generated with
+ * https://draw.io).
  * Any changes in this file must be represented in the diagram.
  *
  * The state machine only affects the soft button area code.
@@ -909,7 +906,7 @@ tp_init_middlebutton_emulation(struct tp_dispatch *tp,
 		enable_by_default = true;
 		want_config_option = false;
 	} else if (evdev_device_has_model_quirk(device,
-						QUIRK_MODEL_ALPS_TOUCHPAD)) {
+						QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD)) {
 		enable_by_default = true;
 		want_config_option = true;
 	} else
@@ -1042,8 +1039,7 @@ tp_clickfinger_within_distance(struct tp_dispatch *tp,
 	if (!t1 || !t2)
 		return 0;
 
-	if (t1->thumb.state == THUMB_STATE_YES ||
-	    t2->thumb.state == THUMB_STATE_YES)
+	if (tp_thumb_ignored(tp, t1) || tp_thumb_ignored(tp, t2))
 		return 0;
 
 	x = abs(t1->point.x - t2->point.x);
@@ -1098,7 +1094,7 @@ tp_clickfinger_set_button(struct tp_dispatch *tp)
 		if (t->state != TOUCH_BEGIN && t->state != TOUCH_UPDATE)
 			continue;
 
-		if (t->thumb.state != THUMB_STATE_NO)
+		if (tp_thumb_ignored(tp, t))
 			continue;
 
 		if (t->palm.state != PALM_NONE)
@@ -1146,14 +1142,12 @@ tp_notify_clickpadbutton(struct tp_dispatch *tp,
 	if (tp->buttons.trackpoint) {
 		if (is_topbutton) {
 			struct evdev_dispatch *dispatch = tp->buttons.trackpoint->dispatch;
-			struct input_event event;
-			struct input_event syn_report = {{ 0, 0 }, EV_SYN, SYN_REPORT, 0 };
+			struct input_event event, syn_report;
+			int value;
 
-			event.time = us2tv(time);
-			event.type = EV_KEY;
-			event.code = button;
-			event.value = (state == LIBINPUT_BUTTON_STATE_PRESSED) ? 1 : 0;
-			syn_report.time = event.time;
+			value = (state == LIBINPUT_BUTTON_STATE_PRESSED) ? 1 : 0;
+			event = input_event_init(time, EV_KEY, button, value);
+			syn_report = input_event_init(time, EV_SYN, SYN_REPORT, 0);
 			dispatch->interface->process(dispatch,
 						     tp->buttons.trackpoint,
 						     &event,

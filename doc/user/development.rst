@@ -46,7 +46,6 @@ Hacking on libinput
 .. toctree::
    :maxdepth: 1
 
-   contributing.rst
    architecture
    test-suite.rst
    pointer-acceleration.rst

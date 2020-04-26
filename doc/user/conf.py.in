@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.abspath('@BUILDDIR@'))
 # -- Project information -----------------------------------------------------
 
 project = '@PROJECT_NAME@'
-copyright = '2018, the libinput authors'
+copyright = '2019, the libinput authors'
 author = 'the libinput authors'
 
 # The short X.Y version
@@ -166,10 +166,6 @@ texinfo_documents = [
 # -- Extension configuration -------------------------------------------------
 
 from recommonmark.parser import CommonMarkParser
-
-source_parsers = {
-    '.md': CommonMarkParser,
-}
 
 extlinks = { 'commit' :
 		('https://gitlab.freedesktop.org/libinput/libinput/commit/%s',

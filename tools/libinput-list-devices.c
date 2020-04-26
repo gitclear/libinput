@@ -31,8 +31,8 @@
 #include <libudev.h>
 
 #include <libinput.h>
-#include <libinput-util.h>
 #include <libinput-version.h>
+#include "util-strings.h"
 
 #include "shared.h"
 
@@ -376,6 +376,7 @@ main(int argc, char **argv)
 	struct libinput *li;
 	struct libinput_event *ev;
 	bool grab = false;
+	const char *seat[2] = {"seat0", NULL};
 
 	/* This is kept for backwards-compatibility with the old
 	   libinput-list-devices */
@@ -392,7 +393,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	li = tools_open_backend(BACKEND_UDEV, "seat0", false, &grab);
+	li = tools_open_backend(BACKEND_UDEV, seat, false, &grab);
 	if (!li)
 		return 1;
 

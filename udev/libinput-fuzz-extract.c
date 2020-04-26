@@ -24,16 +24,15 @@
 #include "config.h"
 
 #include <fcntl.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <libudev.h>
 #include <linux/input.h>
 #include <libevdev/libevdev.h>
 
-#include "libinput-util.h"
+#include "util-prop-parsers.h"
+#include "util-macros.h"
 
 /**
  * For a non-zero fuzz on the x/y axes, print that fuzz as property and
@@ -57,9 +56,7 @@ handle_absfuzz(struct udev_device *device)
 	if (!devnode)
 		goto out;
 
-	fd = open(devnode, O_RDWR);
-	if (fd == -1 && errno == EACCES)
-		fd = open(devnode, O_RDONLY);
+	fd = open(devnode, O_RDONLY);
 	if (fd < 0)
 		goto out;
 
@@ -71,23 +68,47 @@ handle_absfuzz(struct udev_device *device)
 		goto out;
 
 	ARRAY_FOR_EACH(axes, code) {
-		struct input_absinfo abs;
 		int fuzz;
 
 		fuzz = libevdev_get_abs_fuzz(evdev, *code);
-		if (!fuzz)
-			continue;
-
-		abs = *libevdev_get_abs_info(evdev, *code);
-		abs.fuzz = 0;
-		libevdev_kernel_set_abs_info(evdev, *code, &abs);
-
-		printf("LIBINPUT_FUZZ_%02x=%d\n", *code, fuzz);
+		if (fuzz)
+			printf("LIBINPUT_FUZZ_%02x=%d\n", *code, fuzz);
 	}
 
 out:
 	close(fd);
 	libevdev_free(evdev);
+}
+
+/**
+ * Where a device has EVDEV_ABS_... set with a fuzz, that fuzz hasn't been
+ * applied to the kernel yet. So we need to extract it ourselves **and**
+ * update the property so the kernel won't actually set it later.
+ */
+static void
+handle_evdev_abs(struct udev_device *device)
+{
+	unsigned int *code;
+	unsigned int axes[] = {ABS_X,
+			       ABS_Y,
+			       ABS_MT_POSITION_X,
+			       ABS_MT_POSITION_Y};
+
+	ARRAY_FOR_EACH(axes, code) {
+		const char *prop;
+		char name[64];
+		uint32_t mask;
+		struct input_absinfo abs;
+
+		snprintf(name, sizeof(name), "EVDEV_ABS_%02X", *code);
+		prop = udev_device_get_property_value(device, name);
+		if (!prop)
+			continue;
+
+		mask = parse_evdev_abs_prop(prop, &abs);
+		if (mask & ABS_MASK_FUZZ)
+			printf("LIBINPUT_FUZZ_%02x=%d\n", *code, abs.fuzz);
+	}
 }
 
 int main(int argc, char **argv)
@@ -110,9 +131,8 @@ int main(int argc, char **argv)
 	if (!device)
 		goto out;
 
-	if (udev_device_get_property_value(device, "ID_INPUT_TOUCHPAD") ||
-	    udev_device_get_property_value(device, "ID_INPUT_TOUCHSCREEN"))
-		handle_absfuzz(device);
+	handle_absfuzz(device);
+	handle_evdev_abs(device);
 
 	rc = 0;
 

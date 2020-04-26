@@ -88,7 +88,7 @@ static int events[] = {
 
 TEST_DEVICE("uclogic-tablet",
 	.type = LITEST_UCLOGIC_TABLET,
-	.features = LITEST_TABLET | LITEST_HOVER,
+	.features = LITEST_TABLET | LITEST_HOVER | LITEST_FORCED_PROXOUT,
 	.interface = &interface,
 
 	.name = "uclogic PenTablet Pen",

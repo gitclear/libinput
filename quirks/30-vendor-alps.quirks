@@ -17,7 +17,7 @@ MatchUdevType=touchpad
 MatchBus=ps2
 MatchVendor=0x0002
 MatchProduct=0x0008
-ModelALPSTouchpad=1
+ModelALPSSerialTouchpad=1
 
 [ALPS v8 Touchpads]
 MatchUdevType=touchpad

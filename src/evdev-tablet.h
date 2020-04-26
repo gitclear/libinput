@@ -37,14 +37,16 @@ enum tablet_status {
 	TABLET_NONE			= 0,
 	TABLET_AXES_UPDATED		= bit(0),
 	TABLET_BUTTONS_PRESSED		= bit(1),
-	TABLET_BUTTONS_RELEASED		= bit(2),
-	TABLET_TOOL_IN_CONTACT		= bit(3),
-	TABLET_TOOL_LEAVING_PROXIMITY	= bit(4),
-	TABLET_TOOL_OUT_OF_PROXIMITY	= bit(5),
-	TABLET_TOOL_ENTERING_PROXIMITY	= bit(6),
-	TABLET_TOOL_ENTERING_CONTACT	= bit(7),
-	TABLET_TOOL_LEAVING_CONTACT	= bit(8),
-	TABLET_TOOL_OUT_OF_RANGE	= bit(9),
+	TABLET_BUTTONS_DOWN		= bit(2),
+	TABLET_BUTTONS_RELEASED		= bit(3),
+	TABLET_TOOL_UPDATED		= bit(4),
+	TABLET_TOOL_IN_CONTACT		= bit(5),
+	TABLET_TOOL_LEAVING_PROXIMITY	= bit(6),
+	TABLET_TOOL_OUT_OF_PROXIMITY	= bit(7),
+	TABLET_TOOL_ENTERING_PROXIMITY	= bit(8),
+	TABLET_TOOL_ENTERING_CONTACT	= bit(9),
+	TABLET_TOOL_LEAVING_CONTACT	= bit(10),
+	TABLET_TOOL_OUT_OF_RANGE	= bit(11),
 };
 
 struct button_state {
@@ -101,6 +103,7 @@ struct tablet_dispatch {
 	} rotation;
 
 	struct {
+		bool need_to_force_prox_out;
 		struct libinput_timer prox_out_timer;
 		bool proximity_out_forced;
 		uint64_t last_event_time;

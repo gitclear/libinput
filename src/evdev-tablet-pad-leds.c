@@ -23,9 +23,7 @@
 
 #include "config.h"
 
-#include <assert.h>
 #include <limits.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 
 #include "evdev-tablet-pad.h"

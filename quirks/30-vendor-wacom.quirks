@@ -12,3 +12,11 @@ MatchBus=usb
 MatchVendor=0x056A
 MatchProduct=0x0357
 AttrPalmSizeThreshold=5
+
+[Wacom ISDV4 Pen]
+MatchUdevType=tablet
+MatchBus=usb
+MatchVendor=0x56A
+MatchProduct=0x4200
+ModelWacomISDV4Pen=1
+AttrEventCodeDisable=ABS_TILT_X;ABS_TILT_Y;

@@ -25,6 +25,9 @@
 
 #pragma once
 
+#include <unistd.h>
+#include "util-strings.h"
+
 /**
  * Try to figure out the directory we're executing from and if it matches
  * the builddir, return that directory. Otherwise, return NULL.

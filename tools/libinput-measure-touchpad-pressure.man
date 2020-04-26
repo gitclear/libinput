@@ -53,6 +53,11 @@ device-specific pressure values and it is required that
 Assume a palm threshold of
 .I N.
 The threshold has to be in device-specific pressure values.
+.TP 8
+.B \-\-thumb\-threshold=\fIN\fR
+Assume a thumb threshold of
+.I N.
+The threshold has to be in device-specific pressure values.
 .PP
 If the touch-thresholds or the palm-threshold are not provided,
 this tool uses the thresholds provided by the device quirks (if any) or the

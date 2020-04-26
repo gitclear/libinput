@@ -10,7 +10,6 @@ MAX_INITIALIZER_LINES  = 0
 WARNINGS               = YES
 QUIET                  = YES
 INPUT                  = "@builddir@"
-FILTER_PATTERNS        = *.h *.dox
 IMAGE_PATH             = "@builddir@"
 GENERATE_HTML          = YES
 HTML_OUTPUT            = api

@@ -25,22 +25,22 @@
 
 #include <errno.h>
 #include <inttypes.h>
-#include <fcntl.h>
 #include <getopt.h>
 #include <poll.h>
 #include <stdio.h>
-#include <stdarg.h>
+#include <stdlib.h>
 #include <signal.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <libudev.h>
 #include "linux/input.h"
-#include <sys/ioctl.h>
 
 #include <libinput.h>
 #include <libevdev/libevdev.h>
 
+#include "libinput-version.h"
+#include "util-strings.h"
+#include "util-macros.h"
 #include "shared.h"
 
 static uint32_t start_time;
@@ -140,6 +140,9 @@ print_event_header(struct libinput_event *ev)
 	case LIBINPUT_EVENT_TABLET_PAD_STRIP:
 		type = "TABLET_PAD_STRIP";
 		break;
+	case LIBINPUT_EVENT_TABLET_PAD_KEY:
+		type = "TABLET_PAD_KEY";
+		break;
 	case LIBINPUT_EVENT_SWITCH_TOGGLE:
 		type = "SWITCH_TOGGLE";
 		break;
@@ -158,7 +161,7 @@ print_event_header(struct libinput_event *ev)
 static void
 print_event_time(uint32_t time)
 {
-	printq("%+6.2fs	", (time - start_time) / 1000.0);
+	printq("%+6.3fs	", start_time ? (time - start_time) / 1000.0 : 0);
 }
 
 static inline void
@@ -578,7 +581,7 @@ print_proximity_event(struct libinput_event *ev)
 		abort();
 	}
 
-	printq("\t%s (%#" PRIx64 ", id %#" PRIx64 ") %s ",
+	printq("\t%-8s (%#" PRIx64 ", id %#" PRIx64 ") %s ",
 	       tool_str,
 	       libinput_tablet_tool_get_serial(tool),
 	       libinput_tablet_tool_get_tool_id(tool),
@@ -765,6 +768,32 @@ print_tablet_pad_strip_event(struct libinput_event *ev)
 }
 
 static void
+print_tablet_pad_key_event(struct libinput_event *ev)
+{
+	struct libinput_event_tablet_pad *p = libinput_event_get_tablet_pad_event(ev);
+	enum libinput_key_state state;
+	uint32_t key;
+	const char *keyname;
+
+	print_event_time(libinput_event_tablet_pad_get_time(p));
+
+	key = libinput_event_tablet_pad_get_key(p);
+	if (!show_keycodes && (key >= KEY_ESC && key < KEY_ZENKAKUHANKAKU)) {
+		keyname = "***";
+		key = -1;
+	} else {
+		keyname = libevdev_event_code_get_name(EV_KEY, key);
+		keyname = keyname ? keyname : "???";
+	}
+	state = libinput_event_tablet_pad_get_key_state(p);
+	printq("%s (%d) %s\n",
+	       keyname,
+	       key,
+	       state == LIBINPUT_KEY_STATE_PRESSED ? "pressed" : "released");
+}
+
+
+static void
 print_switch_event(struct libinput_event *ev)
 {
 	struct libinput_event_switch *sw = libinput_event_get_switch_event(ev);
@@ -879,6 +908,9 @@ handle_and_print_events(struct libinput *li)
 		case LIBINPUT_EVENT_TABLET_PAD_STRIP:
 			print_tablet_pad_strip_event(ev);
 			break;
+		case LIBINPUT_EVENT_TABLET_PAD_KEY:
+			print_tablet_pad_key_event(ev);
+			break;
 		case LIBINPUT_EVENT_SWITCH_TOGGLE:
 			print_switch_event(ev);
 			break;
@@ -911,30 +943,35 @@ mainloop(struct libinput *li)
 		fprintf(stderr, "Expected device added events on startup but got none. "
 				"Maybe you don't have the right permissions?\n");
 
-	while (!stop && poll(&fds, 1, -1) > -1)
-		handle_and_print_events(li);
+	/* time offset starts with our first received event */
+	if (poll(&fds, 1, -1) > -1) {
+		struct timespec tp;
+
+		clock_gettime(CLOCK_MONOTONIC, &tp);
+		start_time = tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
+		do {
+			handle_and_print_events(li);
+		} while (!stop && poll(&fds, 1, -1) > -1);
+	}
 
 	printf("\n");
 }
 
 static void
 usage(void) {
-	printf("Usage: libinput debug-events [options] [--udev <seat>|--device /dev/input/event0]\n");
+	printf("Usage: libinput debug-events [options] [--udev <seat>|--device /dev/input/event0 ...]\n");
 }
 
 int
 main(int argc, char **argv)
 {
 	struct libinput *li;
-	struct timespec tp;
 	enum tools_backend backend = BACKEND_NONE;
-	const char *seat_or_device = "seat0";
+	const char *seat_or_devices[60] = {NULL};
+	size_t ndevices = 0;
 	bool grab = false;
 	bool verbose = false;
 	struct sigaction act;
-
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-	start_time = tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
 
 	tools_init_options(&options);
 
@@ -980,12 +1017,25 @@ main(int argc, char **argv)
 			be_quiet = true;
 			break;
 		case OPT_DEVICE:
+			if (backend == BACKEND_UDEV ||
+			    ndevices >= ARRAY_LENGTH(seat_or_devices)) {
+				usage();
+				return EXIT_INVALID_USAGE;
+
+			}
 			backend = BACKEND_DEVICE;
-			seat_or_device = optarg;
+			seat_or_devices[ndevices++] = optarg;
 			break;
 		case OPT_UDEV:
+			if (backend == BACKEND_DEVICE ||
+			    ndevices >= ARRAY_LENGTH(seat_or_devices)) {
+				usage();
+				return EXIT_INVALID_USAGE;
+
+			}
 			backend = BACKEND_UDEV;
-			seat_or_device = optarg;
+			seat_or_devices[0] = optarg;
+			ndevices = 1;
 			break;
 		case OPT_GRAB:
 			grab = true;
@@ -1004,14 +1054,21 @@ main(int argc, char **argv)
 	}
 
 	if (optind < argc) {
-		if (optind < argc - 1 || backend != BACKEND_NONE) {
+		if (backend == BACKEND_UDEV) {
 			usage();
 			return EXIT_INVALID_USAGE;
 		}
 		backend = BACKEND_DEVICE;
-		seat_or_device = argv[optind];
+		do {
+			if (ndevices >= ARRAY_LENGTH(seat_or_devices)) {
+				usage();
+				return EXIT_INVALID_USAGE;
+			}
+			seat_or_devices[ndevices++] = argv[optind];
+		} while(++optind < argc);
 	} else if (backend == BACKEND_NONE) {
 		backend = BACKEND_UDEV;
+		seat_or_devices[0] = "seat0";
 	}
 
 	memset(&act, 0, sizeof(act));
@@ -1024,7 +1081,10 @@ main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	li = tools_open_backend(backend, seat_or_device, verbose, &grab);
+	if (verbose)
+		printf("libinput version: %s\n", LIBINPUT_VERSION);
+
+	li = tools_open_backend(backend, seat_or_devices, verbose, &grab);
 	if (!li)
 		return EXIT_FAILURE;
 

@@ -132,9 +132,6 @@ general-purpose **Model*** flags are listed here.
 
 ModelALPSTouchpad, ModelAppleTouchpad, ModelWacomTouchpad, ModelChromebook
     Reserved for touchpads made by the respective vendors
-ModelTabletNoTilt
-    Indicates that the tablet stylus does not provide tilt axis
-    information, even if the kernel exposes that axis.
 ModelTouchpadVisibleMarker
     Indicates the touchpad has a drawn-on visible marker between the software
     buttons.

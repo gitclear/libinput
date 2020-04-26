@@ -47,6 +47,18 @@ struct button_state {
 	unsigned char bits[NCHARS(KEY_CNT)];
 };
 
+typedef struct {
+	uint32_t value;
+} key_or_button_map_t;
+
+#define map_init(x_) ((x_).value = (uint32_t)-1)
+#define map_is_unmapped(x_) ((x_).value == (uint32_t)-1)
+#define map_is_button(x_) (((x_).value & 0xFF000000) == 0)
+#define map_is_key(x_) (((x_).value & 0xFF000000) != 0)
+#define map_set_button_map(field_, value_) ((field_).value = value_)
+#define map_set_key_map(field_, value_) ((field_).value = value_ | 0xFF000000)
+#define map_value(x_) ((x_).value & 0x00FFFFFF)
+
 struct pad_dispatch {
 	struct evdev_dispatch base;
 	struct evdev_device *device;
@@ -56,7 +68,7 @@ struct pad_dispatch {
 	struct button_state button_state;
 	struct button_state prev_button_state;
 
-	char button_map[KEY_CNT];
+	key_or_button_map_t button_map[KEY_CNT];
 	unsigned int nbuttons;
 
 	bool have_abs_misc_terminator;

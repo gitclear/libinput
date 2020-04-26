@@ -41,12 +41,6 @@
 #include "libinput-util.h"
 #include "libinput-version.h"
 
-#if LIBINPUT_VERSION_MICRO >= 90
-#define HTTP_DOC_LINK "https://wayland.freedesktop.org/libinput/doc/latest/"
-#else
-#define HTTP_DOC_LINK "https://wayland.freedesktop.org/libinput/doc/" LIBINPUT_VERSION "/"
-#endif
-
 struct libinput_source;
 
 /* A coordinate pair in device coordinates */
@@ -272,6 +266,10 @@ struct libinput_device_config_scroll_method {
 						  uint32_t button);
 	uint32_t (*get_button)(struct libinput_device *device);
 	uint32_t (*get_default_button)(struct libinput_device *device);
+	enum libinput_config_status (*set_button_lock)(struct libinput_device *device,
+						       enum libinput_config_scroll_button_lock_state);
+	enum libinput_config_scroll_button_lock_state (*get_button_lock)(struct libinput_device *device);
+	enum libinput_config_scroll_button_lock_state (*get_default_button_lock)(struct libinput_device *device);
 };
 
 struct libinput_device_config_click_method {
@@ -386,7 +384,8 @@ struct libinput_tablet_tool {
 
 	/* The pressure threshold assumes a pressure_offset of 0 */
 	struct threshold pressure_threshold;
-	int pressure_offset; /* in device coordinates */
+	/* pressure_offset includes axis->minimum */
+	int pressure_offset;
 	bool has_pressure_offset;
 };
 
@@ -683,6 +682,11 @@ tablet_pad_notify_strip(struct libinput_device *device,
 			double value,
 			enum libinput_tablet_pad_strip_axis_source source,
 			struct libinput_tablet_pad_mode_group *group);
+void
+tablet_pad_notify_key(struct libinput_device *device,
+		      uint64_t time,
+		      int32_t key,
+		      enum libinput_key_state state);
 void
 switch_notify_toggle(struct libinput_device *device,
 		     uint64_t time,

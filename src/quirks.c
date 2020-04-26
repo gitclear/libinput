@@ -38,7 +38,6 @@
 
 #include "libinput-versionsort.h"
 #include "libinput-util.h"
-#include "libinput-private.h"
 
 #include "quirks.h"
 
@@ -230,7 +229,7 @@ const char *
 quirk_get_name(enum quirk q)
 {
 	switch(q) {
-	case QUIRK_MODEL_ALPS_TOUCHPAD:			return "ModelALPSTouchpad";
+	case QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD:		return "ModelALPSSerialTouchpad";
 	case QUIRK_MODEL_APPLE_TOUCHPAD:		return "ModelAppleTouchpad";
 	case QUIRK_MODEL_APPLE_TOUCHPAD_ONEBUTTON:	return "ModelAppleTouchpadOneButton";
 	case QUIRK_MODEL_BOUNCING_KEYS:			return "ModelBouncingKeys";
@@ -239,10 +238,12 @@ quirk_get_name(enum quirk q)
 	case QUIRK_MODEL_HP_PAVILION_DM4_TOUCHPAD:	return "ModelHPPavilionDM4Touchpad";
 	case QUIRK_MODEL_HP_STREAM11_TOUCHPAD:		return "ModelHPStream11Touchpad";
 	case QUIRK_MODEL_HP_ZBOOK_STUDIO_G3:		return "ModelHPZBookStudioG3";
+	case QUIRK_MODEL_INVERT_HORIZONTAL_SCROLLING:	return "ModelInvertHorizontalScrolling";
 	case QUIRK_MODEL_LENOVO_L380_TOUCHPAD:		return "ModelLenovoL380Touchpad";
 	case QUIRK_MODEL_LENOVO_SCROLLPOINT:		return "ModelLenovoScrollPoint";
 	case QUIRK_MODEL_LENOVO_T450_TOUCHPAD:		return "ModelLenovoT450Touchpad";
 	case QUIRK_MODEL_LENOVO_T480S_TOUCHPAD:		return "ModelLenovoT480sTouchpad";
+	case QUIRK_MODEL_LENOVO_T490S_TOUCHPAD:		return "ModelLenovoT490sTouchpad";
 	case QUIRK_MODEL_LENOVO_X230:			return "ModelLenovoX230";
 	case QUIRK_MODEL_SYNAPTICS_SERIAL_TOUCHPAD:	return "ModelSynapticsSerialTouchpad";
 	case QUIRK_MODEL_SYSTEM76_BONOBO:		return "ModelSystem76Bonobo";
@@ -250,10 +251,10 @@ quirk_get_name(enum quirk q)
 	case QUIRK_MODEL_SYSTEM76_KUDU:			return "ModelSystem76Kudu";
 	case QUIRK_MODEL_TABLET_MODE_NO_SUSPEND:	return "ModelTabletModeNoSuspend";
 	case QUIRK_MODEL_TABLET_MODE_SWITCH_UNRELIABLE:	return "ModelTabletModeSwitchUnreliable";
-	case QUIRK_MODEL_TABLET_NO_TILT:		return "ModelTabletNoTilt";
 	case QUIRK_MODEL_TOUCHPAD_VISIBLE_MARKER:	return "ModelTouchpadVisibleMarker";
 	case QUIRK_MODEL_TRACKBALL:			return "ModelTrackball";
 	case QUIRK_MODEL_WACOM_TOUCHPAD:		return "ModelWacomTouchpad";
+	case QUIRK_MODEL_WACOM_ISDV4_PEN:		return "ModelWacomISDV4Pen";
 	case QUIRK_MODEL_DELL_CANVAS_TOTEM:		return "ModelDellCanvasTotem";
 
 	case QUIRK_ATTR_SIZE_HINT:			return "AttrSizeHint";
@@ -292,7 +293,7 @@ matchflagname(enum match_flags f)
 	default:
 		abort();
 	}
-};
+}
 
 static inline struct property *
 property_new(void)
@@ -312,7 +313,7 @@ property_ref(struct property *p)
 	assert(p->refcount > 0);
 	p->refcount++;
 	return p;
-};
+}
 
 static inline struct property *
 property_unref(struct property *p)
@@ -323,7 +324,7 @@ property_unref(struct property *p)
 	p->refcount--;
 
 	return NULL;
-};
+}
 
 /* Separate call so we can verify that the caller unrefs the property
  * before shutting down the subsystem.
@@ -573,7 +574,7 @@ parse_model(struct quirks_context *ctx,
 	    const char *value)
 {
 	bool b;
-	enum quirk q = QUIRK_MODEL_ALPS_TOUCHPAD;
+	enum quirk q = QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD;
 
 	assert(strneq(key, "Model", 5));
 
@@ -737,8 +738,8 @@ parse_attr(struct quirks_context *ctx,
 		p->value.s = safe_strdup(value);
 		rc = true;
 	} else if (streq(key, quirk_get_name(QUIRK_ATTR_EVENT_CODE_DISABLE))) {
-		size_t nevents = 32;
-		struct input_event events[nevents];
+		struct input_event events[32];
+		size_t nevents = ARRAY_LENGTH(events);
 		p->id = QUIRK_ATTR_EVENT_CODE_DISABLE;
 		if (!parse_evcode_property(value, events, &nevents) ||
 		    nevents == 0)
@@ -913,8 +914,13 @@ parse_file(struct quirks_context *ctx, const char *path)
 			section = section_new(path, line);
 			list_append(&ctx->sections, &section->link);
 			break;
-		/* entries must start with A-Z */
-		case 'A'...'Z':
+		default:
+			/* entries must start with A-Z */
+			if (line[0] < 'A' && line[0] > 'Z') {
+				qlog_parser(ctx, "%s:%d: Unexpected line %s\n",
+						 path, lineno, line);
+				goto out;
+			}
 			switch (state) {
 			case STATE_SECTION:
 				qlog_parser(ctx, "%s:%d: expected [Section], got %s\n",
@@ -949,10 +955,6 @@ parse_file(struct quirks_context *ctx, const char *path)
 				goto out;
 			}
 			break;
-		default:
-			qlog_parser(ctx, "%s:%d: Unexpected line %s\n",
-					 path, lineno, line);
-			goto out;
 		}
 	}
 

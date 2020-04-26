@@ -39,12 +39,17 @@
 #include <unistd.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "libinput-versionsort.h"
-#include "libinput-util.h"
 #include "libinput-version.h"
 #include "libinput-git-version.h"
 #include "shared.h"
+#include "builddir.h"
+#include "util-list.h"
+#include "util-time.h"
+#include "util-input-event.h"
+#include "util-macros.h"
 
 static const int FILE_VERSION_NUMBER = 1;
 
@@ -76,6 +81,8 @@ struct record_device {
 	struct list link;
 	char *devnode;		/* device node of the source device */
 	struct libevdev *evdev;
+	struct libevdev *evdev_prev; /* previous value, used for EV_ABS
+					deltas */
 	struct libinput_device *device;
 
 	struct event *events;
@@ -189,19 +196,29 @@ noiprintf(const struct record_context *ctx, const char *format, ...)
 	assert(rc != -1 && (unsigned int)rc > 0);
 }
 
-static inline void
-print_evdev_event(struct record_context *ctx, struct input_event *ev)
+static inline uint64_t
+time_offset(struct record_context *ctx, uint64_t time)
 {
-	const char *cname;
+	return ctx->offset ? time - ctx->offset : 0;
+}
+
+static inline void
+print_evdev_event(struct record_context *ctx,
+		  struct record_device *dev,
+		  struct input_event *ev)
+{
+	const char *tname, *cname;
 	bool was_modified = false;
 	char desc[1024];
+	uint64_t time = input_event_time(ev) - ctx->offset;
 
-	ev->time = us2tv(tv2us(&ev->time) - ctx->offset);
+	input_event_set_time(ev, time);
 
 	/* Don't leak passwords unless the user wants to */
 	if (!ctx->show_keycodes)
 		was_modified = obfuscate_keycode(ev);
 
+	tname = libevdev_event_type_get_name(ev->type);
 	cname = libevdev_event_code_get_name(ev->type, ev->code);
 
 	if (ev->type == EV_SYN && ev->code == SYN_MT_REPORT) {
@@ -214,7 +231,7 @@ print_evdev_event(struct record_context *ctx, struct input_event *ev)
 		static unsigned long last_ms = 0;
 		unsigned long time, dt;
 
-		time = us2ms(tv2us(&ev->time));
+		time = us2ms(input_event_time(ev));
 		dt = time - last_ms;
 		last_ms = time;
 
@@ -224,9 +241,87 @@ print_evdev_event(struct record_context *ctx, struct input_event *ev)
 			cname,
 			ev->value,
 			dt);
-	} else {
-		const char *tname = libevdev_event_type_get_name(ev->type);
+	} else if (ev->type == EV_ABS) {
+		int oldval = 0;
+		enum { DELTA, SLOT_DELTA, NO_DELTA } want = DELTA;
+		int delta = 0;
 
+		/* We want to print deltas for abs axes but there are a few
+		 * that we don't care about for actual deltas because
+		 * they're meaningless.
+		 *
+		 * Also, any slotted axis needs to be printed per slot
+		 */
+		switch (ev->code) {
+		case ABS_MT_SLOT:
+			libevdev_set_event_value(dev->evdev_prev,
+						 ev->type,
+						 ev->code,
+						 ev->value);
+			want = NO_DELTA;
+			break;
+		case ABS_MT_TRACKING_ID:
+		case ABS_MT_BLOB_ID:
+			want = NO_DELTA;
+			break;
+		case ABS_MT_TOUCH_MAJOR ... ABS_MT_POSITION_Y:
+		case ABS_MT_PRESSURE ... ABS_MT_TOOL_Y:
+			if (libevdev_get_num_slots(dev->evdev_prev) > 0)
+				want = SLOT_DELTA;
+			break;
+		default:
+			break;
+		}
+
+		switch (want) {
+		case DELTA:
+			oldval = libevdev_get_event_value(dev->evdev_prev,
+							  ev->type,
+							  ev->code);
+			libevdev_set_event_value(dev->evdev_prev,
+						 ev->type,
+						 ev->code,
+						 ev->value);
+			break;
+		case SLOT_DELTA: {
+			int slot = libevdev_get_current_slot(dev->evdev_prev);
+			oldval = libevdev_get_slot_value(dev->evdev_prev,
+							 slot,
+							 ev->code);
+			libevdev_set_slot_value(dev->evdev_prev,
+						slot,
+						ev->code,
+						ev->value);
+			break;
+		}
+		case NO_DELTA:
+			break;
+
+		}
+
+		delta = ev->value - oldval;
+
+		switch (want) {
+		case DELTA:
+		case SLOT_DELTA:
+			snprintf(desc,
+				 sizeof(desc),
+				 "%s / %-20s %6d (%+d)",
+				 tname,
+				 cname,
+				 ev->value,
+				 delta);
+			break;
+		case NO_DELTA:
+			snprintf(desc,
+				 sizeof(desc),
+				 "%s / %-20s %6d",
+				 tname,
+				 cname,
+				 ev->value);
+			break;
+		}
+	} else {
 		snprintf(desc,
 			 sizeof(desc),
 			 "%s / %-20s %6d%s",
@@ -237,9 +332,9 @@ print_evdev_event(struct record_context *ctx, struct input_event *ev)
 	}
 
 	iprintf(ctx,
-		"- [%3lu, %6u, %3d, %3d, %6d] # %s\n",
-		ev->time.tv_sec,
-		(unsigned int)ev->time.tv_usec,
+		"- [%3lu, %6u, %3d, %3d, %7d] # %s\n",
+		ev->input_event_sec,
+		(unsigned int)ev->input_event_usec,
 		ev->type,
 		ev->code,
 		ev->value,
@@ -267,16 +362,19 @@ handle_evdev_frame(struct record_context *ctx, struct record_device *d)
 	while (libevdev_next_event(evdev,
 				   LIBEVDEV_READ_FLAG_NORMAL,
 				   &e) == LIBEVDEV_READ_STATUS_SUCCESS) {
+		uint64_t time = input_event_time(&e);
 
 		if (ctx->offset == 0)
-			ctx->offset = tv2us(&e.time);
+			ctx->offset = time;
+		else
+			time = time_offset(ctx, time);
 
 		if (d->nevents == d->events_sz)
 			resize(d->events, d->events_sz);
 
 		event = &d->events[d->nevents++];
 		event->type = EVDEV;
-		event->time = tv2us(&e.time) - ctx->offset;
+		event->time = time;
 		event->u.evdev = e;
 		count++;
 
@@ -365,9 +463,7 @@ buffer_key_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_keyboard_get_time_usec(k) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_keyboard_get_time_usec(k));
 	state = libinput_event_keyboard_get_key_state(k);
 
 	key = libinput_event_keyboard_get_key(k);
@@ -407,9 +503,7 @@ buffer_motion_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_pointer_get_time_usec(p) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_pointer_get_time_usec(p));
 	event->time = time;
 	snprintf(event->u.libinput.msg,
 		 sizeof(event->u.libinput.msg),
@@ -442,8 +536,7 @@ buffer_absmotion_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_pointer_get_time_usec(p) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_pointer_get_time_usec(p));
 
 	event->time = time;
 	snprintf(event->u.libinput.msg,
@@ -475,8 +568,7 @@ buffer_pointer_button_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_pointer_get_time_usec(p) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_pointer_get_time_usec(p));
 	button = libinput_event_pointer_get_button(p);
 	state = libinput_event_pointer_get_button_state(p);
 
@@ -511,8 +603,7 @@ buffer_pointer_axis_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_pointer_get_time_usec(p) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_pointer_get_time_usec(p));
 	if (libinput_event_pointer_has_axis(p,
 				LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL)) {
 		h = libinput_event_pointer_get_axis_value(p,
@@ -582,8 +673,7 @@ buffer_touch_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_touch_get_time_usec(t) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_touch_get_time_usec(t));
 
 	if (etype != LIBINPUT_EVENT_TOUCH_FRAME) {
 		slot = libinput_event_touch_get_slot(t);
@@ -666,8 +756,7 @@ buffer_gesture_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_gesture_get_time_usec(g) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_gesture_get_time_usec(g));
 	event->time = time;
 
 	switch (etype) {
@@ -850,10 +939,7 @@ buffer_tablet_tool_proximity_event(struct record_context *ctx,
 	}
 
 	prox = libinput_event_tablet_tool_get_proximity_state(t);
-
-	time = ctx->offset ?
-		libinput_event_tablet_tool_get_time_usec(t) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_tablet_tool_get_time_usec(t));
 	axes = buffer_tablet_axes(t);
 
 	idx = 0;
@@ -909,9 +995,7 @@ buffer_tablet_tool_button_event(struct record_context *ctx,
 
 	button = libinput_event_tablet_tool_get_button(t);
 	state = libinput_event_tablet_tool_get_button_state(t);
-
-	time = ctx->offset ?
-		libinput_event_tablet_tool_get_time_usec(t) - ctx->offset : 0;
+	time = time_offset(ctx, libinput_event_tablet_tool_get_time_usec(t));
 
 	event->time = time;
 	snprintf(event->u.libinput.msg,
@@ -964,10 +1048,7 @@ buffer_tablet_tool_event(struct record_context *ctx,
 	}
 
 	tip = libinput_event_tablet_tool_get_tip_state(t);
-
-	time = ctx->offset ?
-		libinput_event_tablet_tool_get_time_usec(t) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_tablet_tool_get_time_usec(t));
 	axes = buffer_tablet_axes(t);
 
 	event->time = time;
@@ -1004,9 +1085,7 @@ buffer_tablet_pad_button_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_tablet_pad_get_time_usec(p) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_tablet_pad_get_time_usec(p));
 	button = libinput_event_tablet_pad_get_button_number(p),
 	state = libinput_event_tablet_pad_get_button_state(p);
 	mode = libinput_event_tablet_pad_get_mode(p);
@@ -1074,9 +1153,7 @@ buffer_tablet_pad_ringstrip_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_tablet_pad_get_time_usec(p) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_tablet_pad_get_time_usec(p));
 	mode = libinput_event_tablet_pad_get_mode(p);
 
 	event->time = time;
@@ -1111,9 +1188,7 @@ buffer_switch_event(struct record_context *ctx,
 		abort();
 	}
 
-	time = ctx->offset ?
-		libinput_event_switch_get_time_usec(s) - ctx->offset : 0;
-
+	time = time_offset(ctx, libinput_event_switch_get_time_usec(s));
 	sw = libinput_event_switch_get_switch(s);
 	state = libinput_event_switch_get_switch_state(s);
 
@@ -1256,7 +1331,7 @@ print_cached_events(struct record_context *ctx,
 
 		switch (e->type) {
 		case EVDEV:
-			print_evdev_event(ctx, &e->u.evdev);
+			print_evdev_event(ctx, d, &e->u.evdev);
 			break;
 		case LIBINPUT:
 			iprintf(ctx, "- %s\n", e->u.libinput.msg);
@@ -1354,26 +1429,54 @@ print_system_header(struct record_context *ctx)
 {
 	struct utsname u;
 	const char *kernel = "unknown";
-	FILE *dmi;
-	char modalias[2048] = "unknown";
-
-	if (uname(&u) != -1)
-		kernel = u.release;
-
-	dmi = fopen("/sys/class/dmi/id/modalias", "r");
-	if (dmi) {
-		if (fgets(modalias, sizeof(modalias), dmi)) {
-			modalias[strlen(modalias) - 1] = '\0'; /* linebreak */
-		} else {
-			sprintf(modalias, "unknown");
-		}
-		fclose(dmi);
-	}
+	FILE *dmi, *osrelease;
+	char dmistr[2048] = "unknown";
 
 	iprintf(ctx, "system:\n");
 	indent_push(ctx);
+
+	/* /etc/os-release version and distribution name */
+	osrelease = fopen("/etc/os-release", "r");
+	if (!osrelease)
+		osrelease = fopen("/usr/lib/os-release", "r");
+	if (osrelease) {
+		char *distro = NULL, *version = NULL;
+		char osrstr[256] = "unknown";
+
+		while (fgets(osrstr, sizeof(osrstr), osrelease)) {
+			osrstr[strlen(osrstr) - 1] = '\0'; /* linebreak */
+
+			if (!distro && strneq(osrstr, "ID=", 3))
+				distro = strstrip(&osrstr[3], "\"'");
+			else if (!version && strneq(osrstr, "VERSION_ID=", 11))
+				version = strstrip(&osrstr[11], "\"'");
+
+			if (distro && version) {
+				iprintf(ctx, "os: \"%s:%s\"\n", distro, version);
+				break;
+			}
+		}
+		free(distro);
+		free(version);
+		fclose(osrelease);
+	}
+
+	/* kernel version */
+	if (uname(&u) != -1)
+		kernel = u.release;
 	iprintf(ctx, "kernel: \"%s\"\n", kernel);
-	iprintf(ctx, "dmi: \"%s\"\n", modalias);
+
+	/* dmi modalias */
+	dmi = fopen("/sys/class/dmi/id/modalias", "r");
+	if (dmi) {
+		if (fgets(dmistr, sizeof(dmistr), dmi)) {
+			dmistr[strlen(dmistr) - 1] = '\0'; /* linebreak */
+		} else {
+			sprintf(dmistr, "unknown");
+		}
+		fclose(dmi);
+	}
+	iprintf(ctx, "dmi: \"%s\"\n", dmistr);
 	indent_pop(ctx);
 }
 
@@ -1693,7 +1796,7 @@ print_udev_properties(struct record_context *ctx, struct record_device *dev)
 
 		if (strneq(key, "ID_INPUT", 8) ||
 		    strneq(key, "LIBINPUT", 8) ||
-		    strneq(key, "EV_ABS", 6) ||
+		    strneq(key, "EVDEV_ABS", 9) ||
 		    strneq(key, "MOUSE_DPI", 9) ||
 		    strneq(key, "POINTINGSTICK_", 14)) {
 			value = udev_list_entry_get_value(entry);
@@ -1735,9 +1838,18 @@ print_device_quirks(struct record_context *ctx, struct record_device *dev)
 	struct quirks_context *quirks;
 	const char *data_path = LIBINPUT_QUIRKS_DIR;
 	const char *override_file = LIBINPUT_QUIRKS_OVERRIDE_FILE;
+	char *builddir = NULL;
 
 	if (stat(dev->devnode, &st) < 0)
 		return;
+
+	if ((builddir = builddir_lookup())) {
+		setenv("LIBINPUT_QUIRKS_DIR", LIBINPUT_QUIRKS_SRCDIR, 0);
+		data_path = LIBINPUT_QUIRKS_SRCDIR;
+		override_file = NULL;
+	}
+
+	free(builddir);
 
 	quirks = quirks_init_subsystem(data_path,
 				       override_file,
@@ -1769,6 +1881,7 @@ print_device_quirks(struct record_context *ctx, struct record_device *dev)
 out:
 	udev_device_unref(udev_device);
 	udev_unref(udev);
+	quirks_context_unref(quirks);
 }
 static inline void
 print_libinput_description(struct record_context *ctx,
@@ -2197,6 +2310,8 @@ init_device(struct record_context *ctx, char *path)
 	}
 
 	rc = libevdev_new_from_fd(fd, &d->evdev);
+	if (rc == 0)
+		rc = libevdev_new_from_fd(fd, &d->evdev_prev);
 	if (rc != 0) {
 		fprintf(stderr,
 			"Failed to create context for %s (%s)\n",
@@ -2274,7 +2389,7 @@ init_libinput(struct record_context *ctx)
 static inline void
 usage(void)
 {
-	printf("Usage: %s [--help] [--multiple|--all] [--autorestart] [--output-file filename] [/dev/input/event0] [...]\n"
+	printf("Usage: %s [--help] [--all] [--autorestart] [--output-file filename] [/dev/input/event0] [...]\n"
 	       "Common use-cases:\n"
 	       "\n"
 	       " sudo %s -o recording.yml\n"
@@ -2285,7 +2400,7 @@ usage(void)
 	       "    As above, but restarts after 2s of inactivity on the device.\n"
 	       "    Note, the output file is only the prefix.\n"
 	       "\n"
-	       " sudo %s --multiple -o recording.yml /dev/input/event3 /dev/input/event4\n"
+	       " sudo %s -o recording.yml /dev/input/event3 /dev/input/event4\n"
 	       "    Records the two devices into the same recordings file.\n"
 	       "\n"
 	       "For more information, see the %s(1) man page\n",
@@ -2294,6 +2409,28 @@ usage(void)
 	       program_invocation_short_name,
 	       program_invocation_short_name,
 	       program_invocation_short_name);
+}
+
+enum ftype {
+	F_FILE = 8,
+	F_DEVICE,
+	F_NOEXIST,
+};
+
+static inline enum ftype is_char_dev(const char *path)
+{
+	struct stat st;
+
+	if (strneq(path, "/dev", 4))
+		return F_DEVICE;
+
+	if (stat(path, &st) != 0) {
+		if (errno == ENOENT)
+			return F_NOEXIST;
+		return F_FILE;
+	}
+
+	return S_ISCHR(st.st_mode) ? F_DEVICE : F_FILE;
 }
 
 enum options {
@@ -2325,9 +2462,9 @@ main(int argc, char **argv)
 	};
 	struct record_device *d, *tmp;
 	const char *output_arg = NULL;
-	bool multiple = false, all = false, with_libinput = false;
+	bool all = false, with_libinput = false;
 	int ndevices;
-	int rc = 1;
+	int rc = EXIT_FAILURE;
 
 	list_init(&ctx.devices);
 
@@ -2343,12 +2480,13 @@ main(int argc, char **argv)
 		case 'h':
 		case OPT_HELP:
 			usage();
-			rc = 0;
+			rc = EXIT_SUCCESS;
 			goto out;
 		case OPT_AUTORESTART:
 			if (!safe_atoi(optarg, &ctx.timeout) ||
 			    ctx.timeout <= 0) {
 				usage();
+				rc = EXIT_INVALID_USAGE;
 				goto out;
 			}
 			ctx.timeout = ctx.timeout * 1000;
@@ -2360,8 +2498,7 @@ main(int argc, char **argv)
 		case OPT_KEYCODES:
 			ctx.show_keycodes = true;
 			break;
-		case OPT_MULTIPLE:
-			multiple = true;
+		case OPT_MULTIPLE: /* deprecated */
 			break;
 		case OPT_ALL:
 			all = true;
@@ -2369,51 +2506,96 @@ main(int argc, char **argv)
 		case OPT_LIBINPUT:
 			with_libinput = true;
 			break;
+		default:
+			usage();
+			rc = EXIT_INVALID_USAGE;
+			goto out;
 		}
 	}
 
-	if (all && multiple) {
-		fprintf(stderr,
-			"Only one of --multiple and --all allowed.\n");
-		goto out;
+	ndevices = argc - optind;
+
+	/* We allow for multiple arguments after the options, *one* of which
+	 * may be the output file. That one must be the first or the last to
+	 * prevent users from running
+	 *   libinput record /dev/input/event0 output.yml /dev/input/event1
+	 * because this will only backfire anyway.
+	 */
+	if (ndevices >= 1 && output_arg == NULL) {
+		char *first, *last;
+		enum ftype ftype_first;
+
+		first = argv[optind];
+		last = argv[argc - 1];
+
+		ftype_first = is_char_dev(first);
+		if (ndevices == 1) {
+			/* arg is *not* a char device, so let's assume it's
+			 * the output file */
+			if (ftype_first != F_DEVICE) {
+				output_arg = first;
+				optind++;
+				ndevices--;
+			}
+		/* multiple arguments, yay */
+		} else {
+			enum ftype ftype_last = is_char_dev(last);
+			/*
+			   first is device, last is file -> last
+			   first is device, last is device -> noop
+			   first is device, last !exist -> last
+			   first is file, last is device -> first
+			   first is file, last is file -> error
+			   first is file, last !exist -> error
+			   first !exist, last is device -> first
+			   first !exist, last is file -> error
+			   first !exit, last !exist -> error
+			 */
+#define _m(f, l) (((f) << 8) | (l))
+			switch (_m(ftype_first, ftype_last)) {
+			case _m(F_FILE,    F_DEVICE):
+			case _m(F_FILE,    F_NOEXIST):
+			case _m(F_NOEXIST, F_DEVICE):
+				output_arg = first;
+				optind++;
+				ndevices--;
+				break;
+			case _m(F_DEVICE,  F_FILE):
+			case _m(F_DEVICE,  F_NOEXIST):
+				output_arg = last;
+				ndevices--;
+				break;
+			case _m(F_DEVICE,  F_DEVICE):
+				break;
+			case _m(F_FILE,    F_FILE):
+			case _m(F_NOEXIST, F_FILE):
+			case _m(F_NOEXIST, F_NOEXIST):
+				fprintf(stderr, "Ambiguous device vs output file list. Please use --output-file.\n");
+				rc = EXIT_INVALID_USAGE;
+				goto out;
+			}
+#undef _m
+		}
 	}
+
 
 	if (ctx.timeout > 0 && output_arg == NULL) {
 		fprintf(stderr,
 			"Option --autorestart requires --output-file\n");
+		rc = EXIT_INVALID_USAGE;
 		goto out;
 	}
 
 	ctx.outfile = safe_strdup(output_arg);
 
-	ndevices = argc - optind;
-
-	if (multiple) {
-		if (output_arg == NULL) {
-			fprintf(stderr,
-				"Option --multiple requires --output-file\n");
-			goto out;
-		}
-
-		if (ndevices <= 1) {
-			fprintf(stderr,
-				"Option --multiple requires all device nodes on the commandline\n");
-			goto out;
-		}
-
-		for (int i = ndevices; i > 0; i -= 1) {
-			char *devnode = safe_strdup(argv[optind + i - 1]);
-
-			if (!init_device(&ctx, devnode))
-				goto out;
-		}
-	} else if (all) {
+	if (all) {
 		char **devices; /* NULL-terminated */
 		char **d;
 
 		if (output_arg == NULL) {
 			fprintf(stderr,
-				"Option --all requires --output-file\n");
+				"Option --all requires an output file\n");
+			rc = EXIT_INVALID_USAGE;
 			goto out;
 		}
 
@@ -2429,13 +2611,22 @@ main(int argc, char **argv)
 		}
 
 		strv_free(devices);
-	} else {
-		char *path;
-
-		if (ndevices > 1) {
-			fprintf(stderr, "More than one device, do you want --multiple?\n");
+	} else if (ndevices > 1) {
+		if (ndevices > 1 && output_arg == NULL) {
+			fprintf(stderr,
+				"Recording multiple devices requires an output file\n");
+			rc = EXIT_INVALID_USAGE;
 			goto out;
 		}
+
+		for (int i = ndevices; i > 0; i -= 1) {
+			char *devnode = safe_strdup(argv[optind + i - 1]);
+
+			if (!init_device(&ctx, devnode))
+				goto out;
+		}
+	} else {
+		char *path;
 
 		path = ndevices <= 0 ? select_device() : safe_strdup(argv[optind++]);
 		if (path == NULL) {
@@ -2452,7 +2643,8 @@ main(int argc, char **argv)
 	rc = mainloop(&ctx);
 out:
 	list_for_each_safe(d, tmp, &ctx.devices, link) {
-		libinput_device_unref(d->device);
+		if (d->device)
+			libinput_device_unref(d->device);
 		free(d->events);
 		free(d->devnode);
 		libevdev_free(d->evdev);

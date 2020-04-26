@@ -24,6 +24,7 @@
 
 #include <linux/input.h>
 
+#include <assert.h>
 #include <cairo.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -41,7 +42,9 @@
 #include <libevdev/libevdev.h>
 
 #include <libinput.h>
-#include <libinput-util.h>
+#include "util-strings.h"
+#include "util-macros.h"
+#include "util-list.h"
 
 #include "shared.h"
 
@@ -136,6 +139,7 @@ struct window {
 		double tilt_x, tilt_y;
 		double rotation;
 		double size_major, size_minor;
+		bool is_down;
 
 		/* these are for the delta coordinates, but they're not
 		 * deltas, they are converted into abs positions */
@@ -532,6 +536,30 @@ draw_tablet(struct window *w, cairo_t *cr)
 	double x, y;
 	int first, last;
 	size_t mask;
+	int rx, ry;
+
+	/* pressure/distance bars */
+	rx = w->width/2 + 100;
+	ry = w->height/2 + 50;
+	cairo_save(cr);
+	cairo_set_source_rgb(cr, .2, .6, .6);
+	cairo_rectangle(cr, rx, ry, 20, 100);
+	cairo_stroke(cr);
+
+	if (w->tool.distance > 0) {
+		double pos = w->tool.distance * 100;
+		cairo_rectangle(cr, rx, ry + 100 - pos, 20, 5);
+		cairo_fill(cr);
+	}
+	if (w->tool.pressure > 0) {
+		double pos = w->tool.pressure * 100;
+		if (w->tool.is_down)
+			cairo_rectangle(cr, rx + 25, ry + 95, 5, 5);
+		cairo_rectangle(cr, rx, ry + 100 - pos, 20, pos);
+		cairo_fill(cr);
+	}
+	cairo_restore(cr);
+
 
 	/* tablet tool, square for prox-in location */
 	cairo_save(cr);
@@ -1306,9 +1334,11 @@ handle_event_tablet(struct libinput_event *ev, struct window *w)
 		    LIBINPUT_TABLET_TOOL_TIP_DOWN) {
 			w->tool.x_down = x;
 			w->tool.y_down = y;
+			w->tool.is_down = true;
 		} else {
 			w->tool.x_up = x;
 			w->tool.y_up = y;
+			w->tool.is_down = false;
 		}
 		/* fallthrough */
 	case LIBINPUT_EVENT_TABLET_TOOL_AXIS:
@@ -1448,6 +1478,8 @@ handle_event_libinput(GIOChannel *source, GIOCondition condition, gpointer data)
 		case LIBINPUT_EVENT_TABLET_PAD_STRIP:
 			handle_event_tablet_pad(ev, w);
 			break;
+		case LIBINPUT_EVENT_TABLET_PAD_KEY:
+			break;
 		case LIBINPUT_EVENT_SWITCH_TOGGLE:
 			break;
 		}
@@ -1489,10 +1521,11 @@ main(int argc, char **argv)
 	struct tools_options options;
 	struct libinput *li;
 	enum tools_backend backend = BACKEND_NONE;
-	const char *seat_or_device = "seat0";
+	const char *seat_or_device[2] = {"seat0", NULL};
 	bool verbose = false;
 
-	gtk_init(&argc, &argv);
+	if (!gtk_init_check(&argc, &argv))
+		return 77;
 
 	g_unix_signal_add(SIGINT, signal_handler, NULL);
 
@@ -1531,11 +1564,11 @@ main(int argc, char **argv)
 			break;
 		case OPT_DEVICE:
 			backend = BACKEND_DEVICE;
-			seat_or_device = optarg;
+			seat_or_device[0] = optarg;
 			break;
 		case OPT_UDEV:
 			backend = BACKEND_UDEV;
-			seat_or_device = optarg;
+			seat_or_device[0] = optarg;
 			break;
 		case OPT_GRAB:
 			w.grab = true;
@@ -1559,7 +1592,7 @@ main(int argc, char **argv)
 			return EXIT_INVALID_USAGE;
 		}
 		backend = BACKEND_DEVICE;
-		seat_or_device = argv[optind];
+		seat_or_device[0] = argv[optind];
 	} else if (backend == BACKEND_NONE) {
 		backend = BACKEND_UDEV;
 	}

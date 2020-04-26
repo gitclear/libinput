@@ -64,6 +64,25 @@ START_TEST(touch_frame_events)
 }
 END_TEST
 
+START_TEST(touch_downup_no_motion)
+{
+	struct litest_device *dev = litest_current_device();
+	struct libinput *li = dev->libinput;
+
+	litest_drain_events(li);
+
+	litest_touch_down(dev, 0, 10, 10);
+	libinput_dispatch(li);
+
+	litest_assert_touch_down_frame(li);
+
+	litest_touch_up(dev, 0);
+	libinput_dispatch(li);
+
+	litest_assert_touch_up_frame(li);
+}
+END_TEST
+
 START_TEST(touch_abs_transform)
 {
 	struct litest_device *dev;
@@ -489,6 +508,34 @@ START_TEST(touch_calibrated_screen_path)
 }
 END_TEST
 
+START_TEST(touch_calibration_config)
+{
+	struct litest_device *dev = litest_current_device();
+	float identity[6] = {1, 0, 0, 0, 1, 0};
+	float nonidentity[6] = {1, 2, 3, 4, 5, 6};
+	float matrix[6];
+	enum libinput_config_status status;
+	int rc;
+
+	rc = libinput_device_config_calibration_has_matrix(dev->libinput_device);
+	ck_assert_int_eq(rc, 1);
+
+	/* Twice so we have every to-fro combination */
+	for (int i = 0; i < 2; i++) {
+		status = libinput_device_config_calibration_set_matrix(dev->libinput_device, identity);
+		ck_assert_int_eq(status, LIBINPUT_CONFIG_STATUS_SUCCESS);
+		libinput_device_config_calibration_get_matrix(dev->libinput_device, matrix);
+		ck_assert_int_eq(memcmp(matrix, identity, sizeof(matrix)), 0);
+
+		status = libinput_device_config_calibration_set_matrix(dev->libinput_device, nonidentity);
+		ck_assert_int_eq(status, LIBINPUT_CONFIG_STATUS_SUCCESS);
+		libinput_device_config_calibration_get_matrix(dev->libinput_device, matrix);
+		ck_assert_int_eq(memcmp(matrix, nonidentity, sizeof(matrix)), 0);
+	}
+
+}
+END_TEST
+
 static int open_restricted(const char *path, int flags, void *data)
 {
 	int fd;
@@ -824,6 +871,8 @@ START_TEST(touch_initial_state)
 
 		libinput_event_destroy(ev1);
 		libinput_event_destroy(ev2);
+		ev1 = NULL;
+		ev2 = NULL;
 	}
 
 	libinput_event_destroy(ev1);
@@ -1294,6 +1343,8 @@ TEST_COLLECTION(touch)
 	struct range axes = { ABS_X, ABS_Y + 1};
 
 	litest_add("touch:frame", touch_frame_events, LITEST_TOUCH, LITEST_ANY);
+	litest_add("touch:down", touch_downup_no_motion, LITEST_TOUCH, LITEST_ANY);
+	litest_add("touch:down", touch_downup_no_motion, LITEST_SINGLE_TOUCH, LITEST_TOUCHPAD);
 	litest_add_no_device("touch:abs-transform", touch_abs_transform);
 	litest_add("touch:slots", touch_seat_slot, LITEST_TOUCH, LITEST_TOUCHPAD);
 	litest_add_no_device("touch:slots", touch_many_slots);
@@ -1306,6 +1357,7 @@ TEST_COLLECTION(touch)
 	litest_add("touch:calibration", touch_calibration_translation, LITEST_SINGLE_TOUCH, LITEST_TOUCHPAD);
 	litest_add_for_device("touch:calibration", touch_calibrated_screen_path, LITEST_CALIBRATED_TOUCHSCREEN);
 	litest_add_for_device("touch:calibration", touch_calibrated_screen_udev, LITEST_CALIBRATED_TOUCHSCREEN);
+	litest_add("touch:calibration", touch_calibration_config, LITEST_TOUCH, LITEST_ANY);
 
 	litest_add("touch:left-handed", touch_no_left_handed, LITEST_TOUCH, LITEST_ANY);
 

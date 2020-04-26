@@ -305,3 +305,12 @@ LIBINPUT_1.14 {
 	libinput_event_tablet_tool_size_major_has_changed;
 	libinput_event_tablet_tool_size_minor_has_changed;
 } LIBINPUT_1.11;
+
+LIBINPUT_1.15 {
+	libinput_device_config_scroll_set_button_lock;
+	libinput_device_config_scroll_get_button_lock;
+	libinput_device_config_scroll_get_default_button_lock;
+	libinput_device_tablet_pad_has_key;
+	libinput_event_tablet_pad_get_key;
+	libinput_event_tablet_pad_get_key_state;
+} LIBINPUT_1.14;

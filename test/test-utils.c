@@ -24,11 +24,18 @@
 #include <config.h>
 
 #include <check.h>
-#include <libinput-util.h>
 
 #include <valgrind/valgrind.h>
 
-#include "libinput-util.h"
+#include "util-list.h"
+#include "util-strings.h"
+#include "util-time.h"
+#include "util-prop-parsers.h"
+#include "util-macros.h"
+#include "util-bits.h"
+#include "util-ratelimit.h"
+#include "util-matrix.h"
+
 #define  TEST_VERSIONSORT
 #include "libinput-versionsort.h"
 
@@ -517,8 +524,8 @@ START_TEST(evcode_prop_parser)
 
 	for (int i = 0; tests[i].prop; i++) {
 		bool success;
-		size_t nevents = 32;
-		struct input_event events[nevents];
+		struct input_event events[32];
+		size_t nevents = ARRAY_LENGTH(events);
 
 		t = &tests[i];
 		success = parse_evcode_property(t->prop, events, &nevents);
@@ -539,6 +546,83 @@ START_TEST(evcode_prop_parser)
 }
 END_TEST
 
+START_TEST(evdev_abs_parser)
+{
+	struct test {
+		uint32_t which;
+		const char *prop;
+		int min, max, res, fuzz, flat;
+
+	} tests[] = {
+		{ .which = (ABS_MASK_MIN|ABS_MASK_MAX),
+		  .prop = "1:2",
+		  .min = 1, .max = 2 },
+		{ .which = (ABS_MASK_MIN|ABS_MASK_MAX),
+		  .prop = "1:2:",
+		  .min = 1, .max = 2 },
+		{ .which = (ABS_MASK_MIN|ABS_MASK_MAX|ABS_MASK_RES),
+		  .prop = "10:20:30",
+		  .min = 10, .max = 20, .res = 30 },
+		{ .which = (ABS_MASK_RES),
+		  .prop = "::100",
+		  .res = 100 },
+		{ .which = (ABS_MASK_MIN),
+		  .prop = "10:",
+		  .min = 10 },
+		{ .which = (ABS_MASK_MAX|ABS_MASK_RES),
+		  .prop = ":10:1001",
+		  .max = 10, .res = 1001 },
+		{ .which = (ABS_MASK_MIN|ABS_MASK_MAX|ABS_MASK_RES|ABS_MASK_FUZZ),
+		  .prop = "1:2:3:4",
+		  .min = 1, .max = 2, .res = 3, .fuzz = 4},
+		{ .which = (ABS_MASK_MIN|ABS_MASK_MAX|ABS_MASK_RES|ABS_MASK_FUZZ|ABS_MASK_FLAT),
+		  .prop = "1:2:3:4:5",
+		  .min = 1, .max = 2, .res = 3, .fuzz = 4, .flat = 5},
+		{ .which = (ABS_MASK_MIN|ABS_MASK_RES|ABS_MASK_FUZZ|ABS_MASK_FLAT),
+		  .prop = "1::3:4:50",
+		  .min = 1, .res = 3, .fuzz = 4, .flat = 50},
+		{ .which = ABS_MASK_FUZZ|ABS_MASK_FLAT,
+		  .prop = ":::5:60",
+		  .fuzz = 5, .flat = 60},
+		{ .which = ABS_MASK_FUZZ,
+		  .prop = ":::5:",
+		  .fuzz = 5 },
+		{ .which = ABS_MASK_RES, .prop = "::12::",
+		  .res = 12 },
+		/* Malformed property but parsing this one makes us more
+		 * future proof */
+		{ .which = (ABS_MASK_RES|ABS_MASK_FUZZ|ABS_MASK_FLAT),
+		  .prop = "::12:1:2:3:4:5:6",
+		  .res = 12, .fuzz = 1, .flat = 2 },
+		{ .which = 0, .prop = ":::::" },
+		{ .which = 0, .prop = ":" },
+		{ .which = 0, .prop = "" },
+		{ .which = 0, .prop = ":asb::::" },
+		{ .which = 0, .prop = "foo" },
+	};
+	struct test *t;
+
+	ARRAY_FOR_EACH(tests, t) {
+		struct input_absinfo abs;
+		uint32_t mask;
+
+		mask = parse_evdev_abs_prop(t->prop, &abs);
+		ck_assert_int_eq(mask, t->which);
+
+		if (t->which & ABS_MASK_MIN)
+			ck_assert_int_eq(abs.minimum, t->min);
+		if (t->which & ABS_MASK_MAX)
+			ck_assert_int_eq(abs.maximum, t->max);
+		if (t->which & ABS_MASK_RES)
+			ck_assert_int_eq(abs.resolution, t->res);
+		if (t->which & ABS_MASK_FUZZ)
+			ck_assert_int_eq(abs.fuzz, t->fuzz);
+		if (t->which & ABS_MASK_FLAT)
+			ck_assert_int_eq(abs.flat, t->flat);
+	}
+}
+END_TEST
+
 START_TEST(time_conversion)
 {
 	ck_assert_int_eq(us(10), 10);
@@ -546,6 +630,37 @@ START_TEST(time_conversion)
 	ck_assert_int_eq(ms2us(10), 10000);
 	ck_assert_int_eq(s2us(1), 1000000);
 	ck_assert_int_eq(us2ms(10000), 10);
+}
+END_TEST
+
+START_TEST(human_time)
+{
+	struct ht_tests {
+		uint64_t interval;
+		unsigned int value;
+		const char *unit;
+	} tests[] = {
+		{ 0, 0, "us" },
+		{ 123, 123, "us" },
+		{ ms2us(5), 5, "ms" },
+		{ ms2us(100), 100, "ms" },
+		{ s2us(5), 5, "s" },
+		{ s2us(100), 100, "s" },
+		{ s2us(120), 2, "min" },
+		{ 5 * s2us(60), 5, "min" },
+		{ 120 * s2us(60), 2, "h" },
+		{ 5 * 60 * s2us(60), 5, "h" },
+		{ 48 * 60 * s2us(60), 2, "d" },
+		{ 1000 * 24 * 60 * s2us(60), 1000, "d" },
+		{ 0, 0, NULL },
+	};
+	for (int i = 0; tests[i].unit != NULL; i++) {
+		struct human_time ht;
+
+		ht = to_human_time(tests[i].interval);
+		ck_assert_int_eq(ht.value, tests[i].value);
+		ck_assert_str_eq(ht.unit, tests[i].unit);
+	}
 }
 END_TEST
 
@@ -949,6 +1064,44 @@ START_TEST(strjoin_test)
 }
 END_TEST
 
+START_TEST(strstrip_test)
+{
+	struct strstrip_test {
+		const char *string;
+		const char *expected;
+		const char *what;
+	} tests[] = {
+		{ "foo",		"foo",		"1234" },
+		{ "\"bar\"",		"bar",		"\"" },
+		{ "'bar'",		"bar",		"'" },
+		{ "\"bar\"",		"\"bar\"",	"'" },
+		{ "'bar'",		"'bar'",	"\"" },
+		{ "\"bar\"",		"bar",		"\"" },
+		{ "\"\"",		"",		"\"" },
+		{ "\"foo\"bar\"",	"foo\"bar",	"\"" },
+		{ "\"'foo\"bar\"",	"foo\"bar",	"\"'" },
+		{ "abcfooabcbarbca",	"fooabcbar",	"abc" },
+		{ "xxxxfoo",		"foo",		"x" },
+		{ "fooyyyy",		"foo",		"y" },
+		{ "xxxxfooyyyy",	"foo",		"xy" },
+		{ "x xfooy y",		" xfooy ",	"xy" },
+		{ " foo\n",		"foo",		" \n" },
+		{ "",			"",		"abc" },
+		{ "",			"",		"" },
+		{ NULL , NULL, NULL }
+	};
+	struct strstrip_test *t = tests;
+
+	while (t->string) {
+		char *str;
+		str = strstrip(t->string, t->what);
+		ck_assert_str_eq(str, t->expected);
+		free(str);
+		t++;
+	}
+}
+END_TEST
+
 START_TEST(list_test_insert)
 {
 	struct list_test {
@@ -1043,6 +1196,7 @@ litest_utils_suite(void)
 	tcase_add_test(tc, calibration_prop_parser);
 	tcase_add_test(tc, range_prop_parser);
 	tcase_add_test(tc, evcode_prop_parser);
+	tcase_add_test(tc, evdev_abs_parser);
 	tcase_add_test(tc, safe_atoi_test);
 	tcase_add_test(tc, safe_atoi_base_16_test);
 	tcase_add_test(tc, safe_atoi_base_8_test);
@@ -1053,11 +1207,15 @@ litest_utils_suite(void)
 	tcase_add_test(tc, strsplit_test);
 	tcase_add_test(tc, kvsplit_double_test);
 	tcase_add_test(tc, strjoin_test);
+	tcase_add_test(tc, strstrip_test);
 	tcase_add_test(tc, time_conversion);
+	tcase_add_test(tc, human_time);
 
 	tcase_add_test(tc, list_test_insert);
 	tcase_add_test(tc, list_test_append);
 	tcase_add_test(tc, strverscmp_test);
+
+	suite_add_tcase(s, tc);
 
 	return s;
 }
@@ -1068,14 +1226,8 @@ int main(int argc, char **argv)
 	Suite *s;
 	SRunner *sr;
 
-        /* when running under valgrind we're using nofork mode, so a signal
-         * raised by a test will fail in valgrind. There's nothing to
-         * memcheck here anyway, so just skip the valgrind test */
-        if (RUNNING_ON_VALGRIND)
-            return 77;
-
 	s = litest_utils_suite();
-        sr = srunner_create(s);
+	sr = srunner_create(s);
 
 	srunner_run_all(sr, CK_ENV);
 	nfailed = srunner_ntests_failed(sr);

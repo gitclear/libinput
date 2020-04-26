@@ -42,6 +42,18 @@ This is a symptom of an invalid trackpoint multiplier. These devices need
 pointer acceleration accordingly. See :ref:`trackpoint_range` for a detailed
 explanation.
 
+.. _faq_pointer_acceleration:
+
+------------------------------------------------------------------------------
+Why is libinput's pointer acceleration worse than synaptics/evdev
+------------------------------------------------------------------------------
+
+This is a known problem affecting some devices and/or use-case but the exact
+cause is still unknown. It may be a device-specific issue, it may be a bug
+in libinput's acceleration code, it may be a disagreement about how pointer
+acceleration should feel. Unfortunately this is something that affected
+users need to investigate and analyze.
+
 .. _faq_enable_tapping:
 
 ------------------------------------------------------------------------------
@@ -312,14 +324,13 @@ direct connection. As a technical analogy, the question is similar to "is
 glibc required for HTTP", or (stretching the analogy a bit further) "Is a
 pen required to write English". No, it isn't.
 
-You can use libinput without a Wayland compositor, you can
-write a Wayland compositor without libinput. Until 2018 the most common use
-of libinput is with the X.Org X server through the xf86-input-libinput
-driver. As Wayland compositors become more commonplace they will eventually
-overtake X.
+You can use libinput without a Wayland compositor, you can write a Wayland
+compositor without libinput. On most major distributions, libinput is the
+standard input stack used with the X.Org X server through the
+xf86-input-libinput driver.
 
 So why "for your use-case - probably"?  All general-purpose Wayland
-compositors use libinput for their input stack.  Wayland compositors that
+compositors use libinput for their input stack. Wayland compositors that
 are more specialized (e.g. in-vehicle infotainment or IVI) can handle input
 devices directly but the compositor you want to use
 on your desktop needs an input stack that is more complex. And right now,

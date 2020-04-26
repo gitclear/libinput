@@ -30,3 +30,7 @@ option('coverity',
        type: 'boolean',
        value: false,
        description: 'Enable coverity build fixes, see meson.build for details [default=false]')
+option('zshcompletiondir',
+       type: 'string',
+       value: '',
+       description: 'Directory for zsh completion scripts ["no" disables]')

@@ -27,30 +27,37 @@
 #include "litest-int.h"
 #include <assert.h>
 
-static void touch_down(struct litest_device *d, unsigned int slot,
-		       double x, double y)
+static bool
+touch_down(struct litest_device *d, unsigned int slot, double x, double y)
 {
 	assert(slot == 0);
 
 	litest_event(d, EV_ABS, ABS_X, litest_scale(d, ABS_X, x));
 	litest_event(d, EV_ABS, ABS_Y, litest_scale(d, ABS_Y, y));
 	litest_event(d, EV_SYN, SYN_REPORT, 0);
+
+	return true; /* we handled the event */
 }
 
-static void touch_move(struct litest_device *d, unsigned int slot,
-		       double x, double y)
+static bool
+touch_move(struct litest_device *d, unsigned int slot, double x, double y)
 {
 	assert(slot == 0);
 
 	litest_event(d, EV_ABS, ABS_X, litest_scale(d, ABS_X, x));
 	litest_event(d, EV_ABS, ABS_Y, litest_scale(d, ABS_Y, y));
 	litest_event(d, EV_SYN, SYN_REPORT, 0);
+
+	return true; /* we handled the event */
 }
 
-static void touch_up(struct litest_device *d, unsigned int slot)
+static bool
+touch_up(struct litest_device *d, unsigned int slot)
 {
 	assert(slot == 0);
 	litest_event(d, EV_SYN, SYN_REPORT, 0);
+
+	return true; /* we handled the event */
 }
 
 static struct litest_device_interface interface = {

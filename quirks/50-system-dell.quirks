@@ -33,6 +33,18 @@ MatchName=*DualPoint Stick
 MatchDMIModalias=dmi:*svnDellInc.:pnLatitudeD620*
 AttrTrackpointMultiplier=0.5
 
+[Latitude E5480 Trackpoint]
+MatchName=*DualPoint Stick
+MatchUdevType=pointingstick
+MatchDMIModalias=dmi:**bvnDellInc.:*:pnLatitude5480*
+AttrTrackpointMultiplier=0.5
+
+[Latitude 5580 Trackpoint]
+MatchName=*DualPoint Stick
+MatchUdevType=pointingstick
+MatchDMIModalias=dmi:**bvnDellInc.:*:pnLatitude5580*
+AttrTrackpointMultiplier=0.5
+
 [Latitude E5570 Trackpoint]
 MatchName=*DualPoint Stick
 MatchDMIModalias=dmi:*svnDellInc.:pnLatitudeE5570*

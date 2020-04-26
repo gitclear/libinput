@@ -23,15 +23,8 @@
 
 #include "config.h"
 
-#include <errno.h>
 #include <getopt.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <libudev.h>
-
-#include <libinput-util.h>
 
 #include "shared.h"
 

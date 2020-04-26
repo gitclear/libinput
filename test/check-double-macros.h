@@ -31,31 +31,38 @@
 #undef ck_assert_double_le
 #undef ck_assert_double_gt
 #undef ck_assert_double_ge
+#undef ck_assert_double_eq_tol
+#undef ck_assert_double_ne_tol
 
 #define CK_DOUBLE_EQ_EPSILON 1E-3
-#define ck_assert_double_eq(X,Y)  \
+#define _ck_assert_double_eq(X,Y, epsilon)  \
 	do { \
 		double _ck_x = X; \
 		double _ck_y = Y; \
-		ck_assert_msg(fabs(_ck_x - _ck_y) < CK_DOUBLE_EQ_EPSILON, \
+		ck_assert_msg(fabs(_ck_x - _ck_y) < epsilon, \
 			      "Assertion '" #X " == " #Y \
 			      "' failed: "#X"==%f, "#Y"==%f", \
 			      _ck_x, \
 			      _ck_y); \
 	} while (0)
 
-#define ck_assert_double_ne(X,Y)  \
+#define _ck_assert_double_ne(X,Y, epsilon)  \
 	do { \
 		double _ck_x = X; \
 		double _ck_y = Y; \
-		ck_assert_msg(fabs(_ck_x - _ck_y) > CK_DOUBLE_EQ_EPSILON, \
+		ck_assert_msg(fabs(_ck_x - _ck_y) > epsilon, \
 			      "Assertion '" #X " != " #Y \
 			      "' failed: "#X"==%f, "#Y"==%f", \
 			      _ck_x, \
 			      _ck_y); \
 	} while (0)
 
-#define _ck_assert_double_eq(X, OP, Y)  \
+#define ck_assert_double_eq(X, Y) _ck_assert_double_eq(X, Y, CK_DOUBLE_EQ_EPSILON)
+#define ck_assert_double_eq_tol(X, Y, tol) _ck_assert_double_eq(X, Y, tol)
+#define ck_assert_double_ne(X, Y) _ck_assert_double_ne(X, Y, CK_DOUBLE_EQ_EPSILON)
+#define ck_assert_double_ne_tol(X, Y, tol) _ck_assert_double_ne(X, Y, tol)
+
+#define _ck_assert_double_eq_op(X, OP, Y)  \
 	do { \
 		double _ck_x = X; \
 		double _ck_y = Y; \
@@ -67,7 +74,7 @@
 			      _ck_y); \
 	} while (0)
 
-#define _ck_assert_double_ne(X, OP,Y) \
+#define _ck_assert_double_ne_op(X, OP,Y) \
 	do { \
 		double _ck_x = X; \
 		double _ck_y = Y; \
@@ -78,8 +85,9 @@
 			      _ck_x, \
 			      _ck_y); \
 	} while (0)
-#define ck_assert_double_lt(X, Y) _ck_assert_double_ne(X, <, Y)
-#define ck_assert_double_le(X, Y) _ck_assert_double_eq(X, <=, Y)
-#define ck_assert_double_gt(X, Y) _ck_assert_double_ne(X, >, Y)
-#define ck_assert_double_ge(X, Y) _ck_assert_double_eq(X, >=, Y)
+
+#define ck_assert_double_lt(X, Y) _ck_assert_double_ne_op(X, <, Y)
+#define ck_assert_double_le(X, Y) _ck_assert_double_eq_op(X, <=, Y)
+#define ck_assert_double_gt(X, Y) _ck_assert_double_ne_op(X, >, Y)
+#define ck_assert_double_ge(X, Y) _ck_assert_double_eq_op(X, >=, Y)
 

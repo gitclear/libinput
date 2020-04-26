@@ -51,6 +51,8 @@ enum configuration_options {
 	OPT_CLICK_METHOD,
 	OPT_SCROLL_METHOD,
 	OPT_SCROLL_BUTTON,
+	OPT_SCROLL_BUTTON_LOCK_ENABLE,
+	OPT_SCROLL_BUTTON_LOCK_DISABLE,
 	OPT_SPEED,
 	OPT_PROFILE,
 	OPT_DISABLE_SENDEVENTS,
@@ -73,6 +75,8 @@ enum configuration_options {
 	{ "disable-middlebutton",      no_argument,       0, OPT_MIDDLEBUTTON_DISABLE }, \
 	{ "enable-dwt",                no_argument,       0, OPT_DWT_ENABLE }, \
 	{ "disable-dwt",               no_argument,       0, OPT_DWT_DISABLE }, \
+	{ "enable-scroll-button-lock", no_argument,       0, OPT_SCROLL_BUTTON_LOCK_ENABLE }, \
+	{ "disable-scroll-button-lock",no_argument,       0, OPT_SCROLL_BUTTON_LOCK_DISABLE }, \
 	{ "set-click-method",          required_argument, 0, OPT_CLICK_METHOD }, \
 	{ "set-scroll-method",         required_argument, 0, OPT_SCROLL_METHOD }, \
 	{ "set-scroll-button",         required_argument, 0, OPT_SCROLL_BUTTON }, \
@@ -100,6 +104,7 @@ struct tools_options {
 	enum libinput_config_scroll_method scroll_method;
 	enum libinput_config_tap_button_map tap_map;
 	int scroll_button;
+	int scroll_button_lock;
 	double speed;
 	int dwt;
 	enum libinput_config_accel_profile profile;
@@ -111,7 +116,7 @@ int tools_parse_option(int option,
 		       const char *optarg,
 		       struct tools_options *options);
 struct libinput* tools_open_backend(enum tools_backend which,
-				    const char *seat_or_device,
+				    const char **seat_or_devices,
 				    bool verbose,
 				    bool *grab);
 void tools_device_apply_config(struct libinput_device *device,

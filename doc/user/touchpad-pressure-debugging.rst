@@ -27,6 +27,9 @@ required for a touchpad device and how to add the required
 change at any time**. Users are advised to :ref:`report a bug <reporting_bugs>`
 with the updated pressure ranges when testing has completed.
 
+.. note:: Most distributions ship ``libinput measure`` in a separate
+	``libinput-utils`` package.
+
 Use the ``libinput measure touchpad-pressure`` tool provided by libinput.
 This tool will search for your touchpad device and print some pressure
 statistics, including whether a touch is/was considered logically down.
@@ -35,27 +38,43 @@ statistics, including whether a touch is/was considered logically down.
 
 Example output of the tool is below: ::
 
-     $ sudo libinput measure touchpad-pressure
-     Ready for recording data.
-     Pressure range used: 8:10
-     Palm pressure range used: 65535
-     Place a single finger on the touchpad to measure pressure values.
-     Ctrl+C to exit
-     &nbsp;
-     Sequence 1190 pressure: min:  39 max:  48 avg:  43 median:  44 tags: down
-     Sequence 1191 pressure: min:  49 max:  65 avg:  62 median:  64 tags: down
-     Sequence 1192 pressure: min:  40 max:  78 avg:  64 median:  66 tags: down
-     Sequence 1193 pressure: min:  36 max:  83 avg:  70 median:  73 tags: down
-     Sequence 1194 pressure: min:  43 max:  76 avg:  72 median:  74 tags: down
-     Touchpad pressure:  47 min:  47 max:  86 tags: down
+    $ sudo libinput measure touchpad-pressure
+    Using Synaptics TM2668-002: /dev/input/event21
+
+    This is an interactive tool
+
+    Place a single finger on the touchpad to measure pressure values.
+    Check that:
+    - touches subjectively perceived as down are tagged as down
+    - touches with a thumb are tagged as thumb
+    - touches with a palm are tagged as palm
+
+    If the touch states do not match the interaction, re-run
+    with --touch-thresholds=down:up using observed pressure values.
+    See --help for more options.
+
+    Press Ctrl+C to exit
+
+    +-------------------------------------------------------------------------------+
+    | Thresh |   70   |  60  |  130   |  100   |                                    |
+    +-------------------------------------------------------------------------------+
+    | Touch  |  down  |  up  |  palm  | thumb  | min  | max  | p  | avg  |  median  |
+    +-------------------------------------------------------------------------------+
+    |  178   |   x    |  x   |        |        |  75  |  75  | 0  |  75  |    75    |
+    |  179   |   x    |  x   |        |        |  35  |  88  | 0  |  77  |    81    |
+    |  180   |   x    |  x   |        |   x    |  65  | 113  | 0  |  98  |    98    |
+    |  181   |   x    |  x   |        |   x    |  50  | 101  | 0  |  86  |    90    |
+    |  182   |   x    |  x   |        |        |  40  |  80  | 0  |  66  |    70    |
+    |  183   |   x    |      |        |        |  43  |  78  | 78 |                 |
+    ...
 
 
 The example output shows five completed touch sequences and one ongoing one.
 For each, the respective minimum and maximum pressure values are printed as
-well as some statistics. The ``tags`` show that sequence was considered
-logically down at some point. This is an interactive tool and its output may
-change frequently. Refer to the <i>libinput-measure-touchpad-pressure(1)</i> man
-page for more details.
+well as some statistics. The ``down`` column show that each sequence was
+considered logically down at some point, two of the sequences were considered
+thumbs. This is an interactive tool and its output may change frequently. Refer
+to the **libinput-measure-touchpad-pressure(1)** man page for more details.
 
 By default, this tool uses the :ref:`device-quirks` for the pressure range. To
 narrow down on the best values for your device, specify the 'logically down'
@@ -124,6 +143,9 @@ required for a touchpad device and how to add the required
 change at any time**. Users are advised to :ref:`report a bug <reporting_bugs>`
 with the updated pressure ranges when testing has completed.
 
+.. note:: Most distributions ship ``libinput measure`` in a separate
+	``libinput-utils`` package.
+
 Use the ``libinput measure touch-size`` tool provided by libinput.
 This tool will search for your touchpad device and print some touch size
 statistics, including whether a touch is/was considered logically down.
@@ -151,7 +173,7 @@ The example output shows five completed touch sequences. For each, the
 respective minimum and maximum pressure values are printed as well as some
 statistics. The ``down`` and ``palm`` tags show that sequence was considered
 logically down or a palm at some point. This is an interactive tool and its
-output may change frequently. Refer to the <i>libinput-measure-touch-size(1)</i> man
+output may change frequently. Refer to the **libinput-measure-touch-size(1)** man
 page for more details.
 
 By default, this tool uses the :ref:`device-quirks` for the touch size range. To

@@ -101,10 +101,10 @@ class Device(libevdev.Device):
            property. Returns None if the property doesn't exist'''
 
         axes = {
-                0x00: self.udev_device.get('LIBINPUT_FUZZ_00'),
-                0x01: self.udev_device.get('LIBINPUT_FUZZ_01'),
-                0x35: self.udev_device.get('LIBINPUT_FUZZ_35'),
-                0x36: self.udev_device.get('LIBINPUT_FUZZ_36'),
+            0x00: self.udev_device.get('LIBINPUT_FUZZ_00'),
+            0x01: self.udev_device.get('LIBINPUT_FUZZ_01'),
+            0x35: self.udev_device.get('LIBINPUT_FUZZ_35'),
+            0x36: self.udev_device.get('LIBINPUT_FUZZ_36'),
         }
 
         if axes[0x35] is not None:
@@ -122,7 +122,7 @@ class Device(libevdev.Device):
             return None
 
         if ((xfuzz is not None and yfuzz is None) or
-            (xfuzz is None and yfuzz is not None)):
+                (xfuzz is None and yfuzz is not None)):
             raise InvalidConfigurationError('fuzz should be set for both axes')
 
         return (xfuzz, yfuzz)
@@ -138,12 +138,12 @@ class Device(libevdev.Device):
         if self.has(libevdev.EV_ABS.ABS_MT_POSITION_X) != self.has(libevdev.EV_ABS.ABS_MT_POSITION_Y):
             raise InvalidDeviceError('device does not have both multitouch axes')
 
-        xfuzz = self.absinfo[libevdev.EV_ABS.ABS_X].fuzz or \
-                self.absinfo[libevdev.EV_ABS.ABS_MT_POSITION_X].fuzz
-        yfuzz = self.absinfo[libevdev.EV_ABS.ABS_Y].fuzz or \
-                self.absinfo[libevdev.EV_ABS.ABS_MT_POSITION_Y].fuzz
+        xfuzz = (self.absinfo[libevdev.EV_ABS.ABS_X].fuzz or
+                 self.absinfo[libevdev.EV_ABS.ABS_MT_POSITION_X].fuzz)
+        yfuzz = (self.absinfo[libevdev.EV_ABS.ABS_Y].fuzz or
+                 self.absinfo[libevdev.EV_ABS.ABS_MT_POSITION_Y].fuzz)
 
-        if xfuzz is 0 and yfuzz is 0:
+        if xfuzz == 0 and yfuzz == 0:
             return None
 
         return (xfuzz, yfuzz)
@@ -169,10 +169,10 @@ def handle_existing_entry(device, fuzz):
     # If the lines aren't in the same order in the file, it'll be a false
     # negative.
     overrides = {
-            0x00: device.udev_device.get('EVDEV_ABS_00'),
-            0x01: device.udev_device.get('EVDEV_ABS_01'),
-            0x35: device.udev_device.get('EVDEV_ABS_35'),
-            0x36: device.udev_device.get('EVDEV_ABS_36'),
+        0x00: device.udev_device.get('EVDEV_ABS_00'),
+        0x01: device.udev_device.get('EVDEV_ABS_01'),
+        0x35: device.udev_device.get('EVDEV_ABS_35'),
+        0x36: device.udev_device.get('EVDEV_ABS_36'),
     }
 
     has_existing_rules = False
@@ -193,8 +193,8 @@ def handle_existing_entry(device, fuzz):
     template = [' EVDEV_ABS_00={}'.format(overrides[0x00]),
                 ' EVDEV_ABS_01={}'.format(overrides[0x01])]
     if overrides[0x35] is not None:
-            template += [' EVDEV_ABS_35={}'.format(overrides[0x35]),
-                         ' EVDEV_ABS_36={}'.format(overrides[0x36])]
+        template += [' EVDEV_ABS_35={}'.format(overrides[0x35]),
+                     ' EVDEV_ABS_36={}'.format(overrides[0x36])]
 
     print('Checking in {}... '.format(OVERRIDE_HWDB_FILE), end='')
     entry, prefix, lineno = check_file_for_lines(OVERRIDE_HWDB_FILE, template)
@@ -284,7 +284,7 @@ def test_hwdb_entry(device, fuzz):
 
     d = Device(device.path)
     f = d.check_axes()
-    if fuzz == f[0] and fuzz == f[1]:
+    if f is not None and fuzz == f[0] and fuzz == f[1]:
         print_green('Success')
         return True
     else:
@@ -410,11 +410,11 @@ def write_udev_rule(device, fuzz):
 
 def main(args):
     parser = argparse.ArgumentParser(
-            description='Print fuzz settings and/or suggest udev rules for the fuzz to be adjusted.'
+        description='Print fuzz settings and/or suggest udev rules for the fuzz to be adjusted.'
     )
     parser.add_argument('path', metavar='/dev/input/event0',
                         nargs='?', type=str, help='Path to device (optional)')
-    parser.add_argument('--fuzz',  type=int, help='Suggested fuzz')
+    parser.add_argument('--fuzz', type=int, help='Suggested fuzz')
     args = parser.parse_args()
 
     try:

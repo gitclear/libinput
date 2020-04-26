@@ -299,49 +299,48 @@ enum litest_device_type {
 	LITEST_TOUCHSCREEN_MT_TOOL_TYPE,
 	LITEST_DELL_CANVAS_TOTEM,
 	LITEST_DELL_CANVAS_TOTEM_TOUCH,
+	LITEST_WACOM_ISDV4_4200_PEN,
+	LITEST_ALPS_3FG,
+	LITEST_ELAN_TABLET,
+	LITEST_ABSINFO_OVERRIDE,
 };
 
-enum litest_device_feature {
-	LITEST_DEVICELESS	= -2,
-	LITEST_DISABLE_DEVICE	= -1,
-	LITEST_ANY		= 0,
-	LITEST_TOUCHPAD		= bit(0),
-	LITEST_CLICKPAD		= bit(1),
-	LITEST_BUTTON		= bit(2),
-	LITEST_KEYS		= bit(3),
-	LITEST_RELATIVE		= bit(4),
-	LITEST_WHEEL		= bit(5),
-	LITEST_TOUCH		= bit(6),
-	LITEST_SINGLE_TOUCH	= bit(7),
-	LITEST_APPLE_CLICKPAD	= bit(8),
-	LITEST_TOPBUTTONPAD	= bit(9),
-	LITEST_SEMI_MT		= bit(10),
-	LITEST_POINTINGSTICK	= bit(11),
-	LITEST_FAKE_MT		= bit(12),
-	LITEST_ABSOLUTE		= bit(13),
-	LITEST_PROTOCOL_A	= bit(14),
-	LITEST_HOVER		= bit(15),
-	LITEST_ELLIPSE		= bit(16),
-	LITEST_TABLET		= bit(17),
-	LITEST_DISTANCE		= bit(18),
-	LITEST_TOOL_SERIAL	= bit(19),
-	LITEST_TILT		= bit(20),
-	LITEST_TABLET_PAD	= bit(21),
-	LITEST_RING		= bit(22),
-	LITEST_STRIP		= bit(23),
-	LITEST_TRACKBALL	= bit(24),
-	LITEST_LEDS		= bit(25),
-	LITEST_SWITCH		= bit(26),
-	LITEST_IGNORED		= bit(27),
-	LITEST_NO_DEBOUNCE	= bit(28),
-	LITEST_TOOL_MOUSE	= bit(29),
-	LITEST_DIRECT		= bit(30),
-	LITEST_TOTEM		= bit(31),
-
-	_LITEST_DEVICE_FEATURE__FORCE_SIZE = LONG_MAX,
-};
-
-static_assert(sizeof(enum litest_device_feature) >= 8, "enum size expected to be 8");
+#define LITEST_DEVICELESS	-2
+#define LITEST_DISABLE_DEVICE	-1
+#define LITEST_ANY		0
+#define LITEST_TOUCHPAD		bit(0)
+#define LITEST_CLICKPAD		bit(1)
+#define LITEST_BUTTON		bit(2)
+#define LITEST_KEYS		bit(3)
+#define LITEST_RELATIVE		bit(4)
+#define LITEST_WHEEL		bit(5)
+#define LITEST_TOUCH		bit(6)
+#define LITEST_SINGLE_TOUCH	bit(7)
+#define LITEST_APPLE_CLICKPAD	bit(8)
+#define LITEST_TOPBUTTONPAD	bit(9)
+#define LITEST_SEMI_MT		bit(10)
+#define LITEST_POINTINGSTICK	bit(11)
+#define LITEST_FAKE_MT		bit(12)
+#define LITEST_ABSOLUTE		bit(13)
+#define LITEST_PROTOCOL_A	bit(14)
+#define LITEST_HOVER		bit(15)
+#define LITEST_ELLIPSE		bit(16)
+#define LITEST_TABLET		bit(17)
+#define LITEST_DISTANCE		bit(18)
+#define LITEST_TOOL_SERIAL	bit(19)
+#define LITEST_TILT		bit(20)
+#define LITEST_TABLET_PAD	bit(21)
+#define LITEST_RING		bit(22)
+#define LITEST_STRIP		bit(23)
+#define LITEST_TRACKBALL	bit(24)
+#define LITEST_LEDS		bit(25)
+#define LITEST_SWITCH		bit(26)
+#define LITEST_IGNORED		bit(27)
+#define LITEST_NO_DEBOUNCE	bit(28)
+#define LITEST_TOOL_MOUSE	bit(29)
+#define LITEST_DIRECT		bit(30)
+#define LITEST_TOTEM		bit(31)
+#define LITEST_FORCED_PROXOUT	bit(32)
 
 /* this is a semi-mt device, so we keep track of the touches that the tests
  * send and modify them so that the first touch is always slot 0 and sends
@@ -442,40 +441,40 @@ void litest_set_log_handler_bug(struct libinput *libinput);
 void
 _litest_add(const char *name,
 	    const char *funcname,
-	    void *func,
-	    enum litest_device_feature required_feature,
-	    enum litest_device_feature excluded_feature);
+	    const void *func,
+	    int64_t required_feature,
+	    int64_t excluded_feature);
 void
 _litest_add_ranged(const char *name,
 		   const char *funcname,
-		   void *func,
-		   enum litest_device_feature required,
-		   enum litest_device_feature excluded,
+		   const void *func,
+		   int64_t required,
+		   int64_t excluded,
 		   const struct range *range);
 void
 _litest_add_for_device(const char *name,
 		       const char *funcname,
-		       void *func,
+		       const void *func,
 		       enum litest_device_type type);
 void
 _litest_add_ranged_for_device(const char *name,
 			      const char *funcname,
-			      void *func,
+			      const void *func,
 			      enum litest_device_type type,
 			      const struct range *range);
 void
 _litest_add_no_device(const char *name,
 		      const char *funcname,
-		      void *func);
+		      const void *func);
 void
 _litest_add_ranged_no_device(const char *name,
 			     const char *funcname,
-			     void *func,
+			     const void *func,
 			     const struct range *range);
 void
 _litest_add_deviceless(const char *name,
 		       const char *funcname,
-		       void *func);
+		       const void *func);
 
 struct litest_device *
 litest_create_device(enum litest_device_type which);
@@ -668,6 +667,10 @@ void
 litest_button_scroll(struct litest_device *d,
 		     unsigned int button,
 		     double dx, double dy);
+void
+litest_button_scroll_locked(struct litest_device *d,
+			    unsigned int button,
+			    double dx, double dy);
 
 void
 litest_keyboard_key(struct litest_device *d,
@@ -752,11 +755,19 @@ struct libinput_event_tablet_pad *
 litest_is_pad_strip_event(struct libinput_event *event,
 			  unsigned int number,
 			  enum libinput_tablet_pad_strip_axis_source source);
+struct libinput_event_tablet_pad *
+litest_is_pad_key_event(struct libinput_event *event,
+			unsigned int key,
+			enum libinput_key_state state);
 
 struct libinput_event_switch *
 litest_is_switch_event(struct libinput_event *event,
 		       enum libinput_switch sw,
 		       enum libinput_switch_state state);
+
+struct libinput_event_tablet_tool *
+litest_is_proximity_event(struct libinput_event *event,
+			  enum libinput_tablet_tool_proximity_state state);
 
 void
 litest_assert_key_event(struct libinput *li, unsigned int key,
@@ -777,6 +788,10 @@ litest_assert_only_typed_events(struct libinput *li,
 				enum libinput_event_type type);
 
 void
+litest_assert_no_typed_events(struct libinput *li,
+			      enum libinput_event_type type);
+
+void
 litest_assert_tablet_button_event(struct libinput *li,
 				  unsigned int button,
 				  enum libinput_button_state state);
@@ -793,6 +808,10 @@ void
 litest_assert_pad_button_event(struct libinput *li,
 				    unsigned int button,
 				    enum libinput_button_state state);
+void
+litest_assert_pad_key_event(struct libinput *li,
+			    unsigned int key,
+			    enum libinput_key_state state);
 struct libevdev_uinput *
 litest_create_uinput_device(const char *name,
 			    struct input_id *id,
@@ -851,9 +870,6 @@ litest_timeout_touch_arbitration(void);
 
 void
 litest_timeout_hysteresis(void);
-
-void
-litest_timeout_thumb(void);
 
 void
 litest_push_event_frame(struct litest_device *dev);
@@ -1139,6 +1155,14 @@ litest_send_file(int sock, int fd)
 	int n = read(fd, buf, 40960);
 	litest_assert_int_gt(n, 0);
 	return write(sock, buf, n);
+}
+
+static inline int litest_slot_count(struct litest_device *dev)
+{
+	if (dev->which == LITEST_ALPS_3FG)
+		return 2;
+
+	return libevdev_get_num_slots(dev->evdev);
 }
 
 #endif /* LITEST_H */

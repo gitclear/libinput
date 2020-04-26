@@ -369,7 +369,7 @@ pad_notify_button_mask(struct pad_dispatch *pad,
 		code = i * 8;
 		while (buttons_slice) {
 			int enabled;
-			char map;
+			key_or_button_map_t map;
 
 			code++;
 			enabled = (buttons_slice & 1);
@@ -379,10 +379,28 @@ pad_notify_button_mask(struct pad_dispatch *pad,
 				continue;
 
 			map = pad->button_map[code - 1];
-			if (map != -1) {
-				group = pad_button_get_mode_group(pad, map);
-				pad_button_update_mode(group, map, state);
-				tablet_pad_notify_button(base, time, map, state, group);
+			if (map_is_unmapped(map))
+				continue;
+
+			if (map_is_button(map)) {
+				int32_t button = map_value(map);
+
+				group = pad_button_get_mode_group(pad, button);
+				pad_button_update_mode(group, button, state);
+				tablet_pad_notify_button(base,
+							 time,
+							 button,
+							 state,
+							 group);
+			} else if (map_is_key(map)) {
+				uint32_t key = map_value(map);
+
+				tablet_pad_notify_key(base,
+						      time,
+						      key,
+						      (enum libinput_key_state)state);
+			} else {
+				abort();
 			}
 		}
 	}
@@ -554,7 +572,7 @@ pad_init_buttons_from_libwacom(struct pad_dispatch *pad,
 		if (code == 0)
 			continue;
 
-		pad->button_map[code] = map++;
+		map_set_button_map(pad->button_map[code], map++);
 	}
 
 	pad->nbuttons = map;
@@ -579,25 +597,45 @@ pad_init_buttons_from_kernel(struct pad_dispatch *pad,
 	/* we match wacom_report_numbered_buttons() from the kernel */
 	for (code = BTN_0; code < BTN_0 + 10; code++) {
 		if (libevdev_has_event_code(device->evdev, EV_KEY, code))
-			pad->button_map[code] = map++;
+			map_set_button_map(pad->button_map[code], map++);
 	}
 
 	for (code = BTN_BASE; code < BTN_BASE + 2; code++) {
 		if (libevdev_has_event_code(device->evdev, EV_KEY, code))
-			pad->button_map[code] = map++;
+			map_set_button_map(pad->button_map[code], map++);
 	}
 
 	for (code = BTN_A; code < BTN_A + 6; code++) {
 		if (libevdev_has_event_code(device->evdev, EV_KEY, code))
-			pad->button_map[code] = map++;
+			map_set_button_map(pad->button_map[code], map++);
 	}
 
 	for (code = BTN_LEFT; code < BTN_LEFT + 7; code++) {
 		if (libevdev_has_event_code(device->evdev, EV_KEY, code))
-			pad->button_map[code] = map++;
+			map_set_button_map(pad->button_map[code], map++);
 	}
 
 	pad->nbuttons = map;
+}
+
+static void
+pad_init_keys(struct pad_dispatch *pad, struct evdev_device *device)
+{
+	unsigned int codes[] = {
+		KEY_BUTTONCONFIG,
+		KEY_ONSCREEN_KEYBOARD,
+		KEY_CONTROLPANEL,
+	};
+	unsigned int *code;
+
+	/* Wacom's keys are the only ones we know anything about */
+	if (libevdev_get_id_vendor(device->evdev) != VENDOR_ID_WACOM)
+		return;
+
+	ARRAY_FOR_EACH(codes, code) {
+		if (libevdev_has_event_code(device->evdev, EV_KEY, *code))
+			map_set_key_map(pad->button_map[*code], *code);
+	}
 }
 
 static void
@@ -607,11 +645,12 @@ pad_init_buttons(struct pad_dispatch *pad,
 	size_t i;
 
 	for (i = 0; i < ARRAY_LENGTH(pad->button_map); i++)
-		pad->button_map[i] = -1;
+		map_init(pad->button_map[i]);
 
 	if (!pad_init_buttons_from_libwacom(pad, device))
 		pad_init_buttons_from_kernel(pad, device);
 
+	pad_init_keys(pad, device);
 }
 
 static void
@@ -705,6 +744,15 @@ evdev_tablet_pad_create(struct evdev_device *device)
 	pad->sendevents.config.get_default_mode = pad_sendevents_get_default_mode;
 
 	return &pad->base;
+}
+
+int
+evdev_device_tablet_pad_has_key(struct evdev_device *device, uint32_t code)
+{
+	if (!(device->seat_caps & EVDEV_DEVICE_TABLET_PAD))
+		return -1;
+
+	return libevdev_has_event_code(device->evdev, EV_KEY, code);
 }
 
 int

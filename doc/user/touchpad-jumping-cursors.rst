@@ -14,10 +14,13 @@ position.
 When libinput detects a cursor jump it prints a bug warning to the log with
 the text **"Touch jump detected and discarded."** and a link to this page.
 
-In most cases, this is a bug in the kernel driver and to libinput it appears
-that the touch point moves from its previous position. The pointer jump can
-usually be seen in the :ref:`libinput record <libinput-record>` output for the device:
+.. note:: This warning is ratelimited and will stop appearing after a few
+	  times, even if the touchpad jumps continue.
 
+In most cases, this is a bug in the firmware (or kernel driver) and to
+libinput it appears that the touch point moves from its previous position.
+The pointer jump can usually be seen in the :ref:`libinput record
+<libinput-record>` output for the device:
 
 ::
 
@@ -50,9 +53,14 @@ usually be seen in the :ref:`libinput record <libinput-record>` output for the d
 In this recording, the pointer jumps from its position 3752/2216 to
 1640/4681 within a single frame. On this particular touchpad, this would
 represent a physical move of almost 50mm. libinput detects some of these
-jumps and discards the movement but otherwise continues as usual. However,
-the bug should be fixed at the kernel level.
+jumps and discards the movement but otherwise continues as usual.
+If your only encounter with these jumps is the warning printed to the log,
+libinput functions as intended.
 
 When you encounter the warning in the log, please generate a recording of
 your touchpad with :ref:`libinput record <libinput-record>` and file a bug.
 See :ref:`reporting_bugs` for more details.
+
+Note that it most cases, libinput cannot actually fix the issue. Filing a
+bug is useful to figure out if there are other factors at play or whether
+there are heuristics we can employ to reduce the impact.

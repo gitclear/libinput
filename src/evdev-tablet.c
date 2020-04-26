@@ -22,7 +22,6 @@
  * DEALINGS IN THE SOFTWARE.
  */
 #include "config.h"
-#include "libinput-version.h"
 #include "evdev-tablet.h"
 
 #include <assert.h>
@@ -354,12 +353,32 @@ static inline double
 normalize_pressure(const struct input_absinfo *absinfo,
 		   struct libinput_tablet_tool *tool)
 {
-	double range = absinfo->maximum - absinfo->minimum;
-	int offset = tool->has_pressure_offset ?
-			tool->pressure_offset : 0;
-	double value = (absinfo->value - offset - absinfo->minimum) / range;
+	int offset;
+	double range;
+	double value;
 
-	return value;
+	/**
+	 * If the tool has a pressure offset, we use that as the lower bound
+	 * for the scaling range. If not, we use the upper threshold as the
+	 * lower bound, so once we get past that minimum physical pressure
+	 * we have logical 0 pressure.
+	 *
+	 * This means that there is a small range (lower-upper) where
+	 * different physical pressure (default: 1-5%) result in the same
+	 * logical pressure. This is, hopefully, not noticable.
+	 *
+	 * Note that that lower-upper range gives us a negative pressure, so
+	 * we have to clip to 0 for those.
+	 */
+
+	if (tool->has_pressure_offset)
+		offset = tool->pressure_offset;
+	else
+		offset = tool->pressure_threshold.upper;
+	range = absinfo->maximum - offset;
+	value = (absinfo->value - offset) / range;
+
+	return max(0.0, value);
 }
 
 static inline double
@@ -806,6 +825,7 @@ tablet_process_key(struct tablet_dispatch *tablet,
 	case BTN_TOOL_MOUSE:
 	case BTN_TOOL_LENS:
 		type = tablet_evcode_to_tool(e->code);
+		tablet_set_status(tablet, TABLET_TOOL_UPDATED);
 		if (e->value)
 			tablet->tool_state |= bit(type);
 		else
@@ -1046,6 +1066,49 @@ axis_range_percentage(const struct input_absinfo *a, double percent)
 	return (a->maximum - a->minimum) * percent/100.0 + a->minimum;
 }
 
+static inline void
+tool_set_pressure_thresholds(struct tablet_dispatch *tablet,
+			     struct libinput_tablet_tool *tool)
+{
+	struct evdev_device *device = tablet->device;
+	const struct input_absinfo *pressure;
+	struct quirks_context *quirks = NULL;
+	struct quirks *q = NULL;
+	struct quirk_range r;
+	int lo = 0, hi = 1;
+
+	tool->pressure_offset = 0;
+	tool->has_pressure_offset = false;
+
+	pressure = libevdev_get_abs_info(device->evdev, ABS_PRESSURE);
+	if (!pressure)
+		goto out;
+
+	quirks = evdev_libinput_context(device)->quirks;
+	q = quirks_fetch_for_device(quirks, device->udev_device);
+
+	tool->pressure_offset = pressure->minimum;
+
+	/* 5 and 1% of the pressure range */
+	hi = axis_range_percentage(pressure, 5);
+	lo = axis_range_percentage(pressure, 1);
+
+	if (q && quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
+		if (r.lower >= r.upper) {
+			evdev_log_info(device,
+				       "Invalid pressure range, using defaults\n");
+		} else {
+			hi = r.upper;
+			lo = r.lower;
+		}
+	}
+out:
+	tool->pressure_threshold.upper = hi;
+	tool->pressure_threshold.lower = lo;
+
+	quirks_unref(q);
+}
+
 static struct libinput_tablet_tool *
 tablet_get_tool(struct tablet_dispatch *tablet,
 		enum libinput_tablet_tool_type type,
@@ -1096,8 +1159,6 @@ tablet_get_tool(struct tablet_dispatch *tablet,
 	/* If we didn't already have the new_tool in our list of tools,
 	 * add it */
 	if (!tool) {
-		const struct input_absinfo *pressure;
-
 		tool = zalloc(sizeof *tool);
 
 		*tool = (struct libinput_tablet_tool) {
@@ -1107,23 +1168,7 @@ tablet_get_tool(struct tablet_dispatch *tablet,
 			.refcount = 1,
 		};
 
-		tool->pressure_offset = 0;
-		tool->has_pressure_offset = false;
-		tool->pressure_threshold.lower = 0;
-		tool->pressure_threshold.upper = 1;
-
-		pressure = libevdev_get_abs_info(tablet->device->evdev,
-						 ABS_PRESSURE);
-		if (pressure) {
-			tool->pressure_offset = pressure->minimum;
-
-			/* 5 and 1% of the pressure range */
-			tool->pressure_threshold.upper =
-				axis_range_percentage(pressure, 5);
-			tool->pressure_threshold.lower =
-				axis_range_percentage(pressure, 1);
-		}
-
+		tool_set_pressure_thresholds(tablet, tool);
 		tool_set_bits(tablet, tool);
 
 		list_insert(tool_list, &tool->link);
@@ -1268,15 +1313,20 @@ detect_pressure_offset(struct tablet_dispatch *tablet,
 	if (!pressure || !distance)
 		return;
 
-	offset = pressure->value - pressure->minimum;
+	offset = pressure->value;
 
+	/* If we have an event that falls below the current offset, adjust
+	 * the offset downwards. A fast contact can start with a
+	 * higher-than-needed pressure offset and then we'd be tied into a
+	 * high pressure offset for the rest of the session.
+	 */
 	if (tool->has_pressure_offset) {
 		if (offset < tool->pressure_offset)
 			tool->pressure_offset = offset;
 		return;
 	}
 
-	if (offset == 0)
+	if (offset <= pressure->minimum)
 		return;
 
 	/* we only set a pressure offset on proximity in */
@@ -1291,19 +1341,19 @@ detect_pressure_offset(struct tablet_dispatch *tablet,
 	if (offset > axis_range_percentage(pressure, 20)) {
 		evdev_log_error(device,
 			 "Ignoring pressure offset greater than 20%% detected on tool %s (serial %#x). "
-			 "See http://wayland.freedesktop.org/libinput/doc/%s/tablet-support.html\n",
+			 "See %stablet-support.html\n",
 			 tablet_tool_type_to_string(tool->type),
 			 tool->serial,
-			 LIBINPUT_VERSION);
+			 HTTP_DOC_LINK);
 		return;
 	}
 
 	evdev_log_info(device,
 		 "Pressure offset detected on tool %s (serial %#x).  "
-		 "See http://wayland.freedesktop.org/libinput/doc/%s/tablet-support.html\n",
+		 "See %stablet-support.html\n",
 		 tablet_tool_type_to_string(tool->type),
 		 tool->serial,
-		 LIBINPUT_VERSION);
+		 HTTP_DOC_LINK);
 	tool->pressure_offset = offset;
 	tool->has_pressure_offset = true;
 	tool->pressure_threshold.lower = pressure->minimum;
@@ -1701,11 +1751,12 @@ static inline void
 tablet_proximity_out_quirk_set_timer(struct tablet_dispatch *tablet,
 				     uint64_t time)
 {
-	libinput_timer_set(&tablet->quirks.prox_out_timer,
-			   time + FORCED_PROXOUT_TIMEOUT);
+	if (tablet->quirks.need_to_force_prox_out)
+		libinput_timer_set(&tablet->quirks.prox_out_timer,
+				   time + FORCED_PROXOUT_TIMEOUT);
 }
 
-static void
+static bool
 tablet_update_tool_state(struct tablet_dispatch *tablet,
 			 struct evdev_device *device,
 			 uint64_t time)
@@ -1713,6 +1764,7 @@ tablet_update_tool_state(struct tablet_dispatch *tablet,
 	enum libinput_tablet_tool_type type;
 	uint32_t changed;
 	int state;
+	uint32_t doubled_up_new_tool_bit = 0;
 
 	/* We need to emulate a BTN_TOOL_PEN if we get an axis event (i.e.
 	 * stylus is def. in proximity) and:
@@ -1721,26 +1773,42 @@ tablet_update_tool_state(struct tablet_dispatch *tablet,
 	 *   BTN_TOOL_PEN and the state for the tool was 0, this device will
 	 *   never send the event.
 	 * We don't do this for pure button events because we discard those.
+	 *
+	 * But: on some devices the proximity out is delayed by the kernel,
+	 * so we get it after our forced prox-out has triggered. In that
+	 * case we need to just ignore the change.
 	 */
-	if (tablet_has_status(tablet, TABLET_AXES_UPDATED) &&
-	    (tablet->quirks.proximity_out_forced ||
-	     (tablet->tool_state == 0 &&
-	      tablet->current_tool.type == LIBINPUT_TOOL_NONE))) {
-		tablet->tool_state = bit(LIBINPUT_TABLET_TOOL_TYPE_PEN);
-		tablet->quirks.proximity_out_forced = false;
+	if (tablet_has_status(tablet, TABLET_AXES_UPDATED)) {
+		if (tablet->quirks.proximity_out_forced) {
+			if (!tablet_has_status(tablet, TABLET_TOOL_UPDATED)  &&
+			    !tablet->tool_state)
+				tablet->tool_state = bit(LIBINPUT_TABLET_TOOL_TYPE_PEN);
+			tablet->quirks.proximity_out_forced = false;
+		} else if (tablet->tool_state == 0 &&
+			    tablet->current_tool.type == LIBINPUT_TOOL_NONE) {
+			tablet->tool_state = bit(LIBINPUT_TABLET_TOOL_TYPE_PEN);
+			tablet->quirks.proximity_out_forced = false;
+		}
 	}
 
 	if (tablet->tool_state == tablet->prev_tool_state)
-		return;
+		return false;
 
 	/* Kernel tools are supposed to be mutually exclusive, if we have
-	 * two set discard the most recent one. */
-	if (__builtin_popcount(tablet->tool_state) > 1) {
-		evdev_log_bug_kernel(device,
-				     "Multiple tools active simultaneously (%#x)\n",
-				     tablet->tool_state);
-		tablet->tool_state = tablet->prev_tool_state;
-		goto out;
+	 * two, we force a proximity out for the older tool and handle the
+	 * new tool as separate proximity in event.
+	 */
+	if (tablet->tool_state & (tablet->tool_state - 1)) {
+		/* tool_state has 2 bits set. We set the current tool state
+		 * to zero, thus setting everything up for a prox out on the
+		 * tool. Once that is set up, we change the tool state to be
+		 * the new one we just got so when we re-process this
+		 * function we now get the new tool as prox in.
+		 * Importantly, we basically rely on nothing else happening
+		 * in the meantime.
+		 */
+		doubled_up_new_tool_bit = tablet->tool_state ^ tablet->prev_tool_state;
+		tablet->tool_state = 0;
 	}
 
 	changed = tablet->tool_state ^ tablet->prev_tool_state;
@@ -1768,9 +1836,25 @@ tablet_update_tool_state(struct tablet_dispatch *tablet,
 		}
 	}
 
-out:
 	tablet->prev_tool_state = tablet->tool_state;
 
+	if (doubled_up_new_tool_bit) {
+		tablet->tool_state = doubled_up_new_tool_bit;
+		return true; /* need to re-process */
+	}
+	return false;
+}
+
+static struct libinput_tablet_tool *
+tablet_get_current_tool(struct tablet_dispatch *tablet)
+{
+	if (tablet->current_tool.type == LIBINPUT_TOOL_NONE)
+		return NULL;
+
+	return tablet_get_tool(tablet,
+			       tablet->current_tool.type,
+			       tablet->current_tool.id,
+			       tablet->current_tool.serial);
 }
 
 static void
@@ -1779,16 +1863,12 @@ tablet_flush(struct tablet_dispatch *tablet,
 	     uint64_t time)
 {
 	struct libinput_tablet_tool *tool;
+	bool process_tool_twice;
 
-	tablet_update_tool_state(tablet, device, time);
-	if (tablet->current_tool.type == LIBINPUT_TOOL_NONE)
-		return;
+reprocess:
+	process_tool_twice = tablet_update_tool_state(tablet, device, time);
 
-	tool = tablet_get_tool(tablet,
-			       tablet->current_tool.type,
-			       tablet->current_tool.id,
-			       tablet->current_tool.serial);
-
+	tool = tablet_get_current_tool(tablet);
 	if (!tool)
 		return; /* OOM */
 
@@ -1819,6 +1899,9 @@ tablet_flush(struct tablet_dispatch *tablet,
 	}
 
 	tablet_send_events(tablet, tool, device, time);
+
+	if (process_tool_twice)
+		goto reprocess;
 }
 
 static inline void
@@ -1882,10 +1965,18 @@ tablet_toggle_touch_device(struct tablet_dispatch *tablet,
 static inline void
 tablet_reset_state(struct tablet_dispatch *tablet)
 {
+	struct button_state zero = {0};
+
 	/* Update state */
 	memcpy(&tablet->prev_button_state,
 	       &tablet->button_state,
 	       sizeof(tablet->button_state));
+	tablet_unset_status(tablet, TABLET_TOOL_UPDATED);
+
+	if (memcmp(&tablet->button_state, &zero, sizeof(zero)) == 0)
+		tablet_unset_status(tablet, TABLET_BUTTONS_DOWN);
+	else
+		tablet_set_status(tablet, TABLET_BUTTONS_DOWN);
 }
 
 static void
@@ -1906,6 +1997,12 @@ tablet_proximity_out_quirk_timer_func(uint64_t now, void *data)
 		  .value = 0 },
 	};
 	struct input_event *e;
+
+	if (tablet_has_status(tablet, TABLET_TOOL_IN_CONTACT) ||
+	    tablet_has_status(tablet, TABLET_BUTTONS_DOWN)) {
+		tablet_proximity_out_quirk_set_timer(tablet, now);
+		return;
+	}
 
 	if (tablet->quirks.last_event_time > now - FORCED_PROXOUT_TIMEOUT) {
 		tablet_proximity_out_quirk_set_timer(tablet,
@@ -2301,6 +2398,12 @@ tablet_init(struct tablet_dispatch *tablet,
 	}
 
 	tablet_set_status(tablet, TABLET_TOOL_OUT_OF_PROXIMITY);
+
+	/* We always enable the proximity out quirk, but disable it once a
+	   device gives us the right event sequence */
+	tablet->quirks.need_to_force_prox_out = true;
+	if (evdev_device_has_model_quirk(device, QUIRK_MODEL_WACOM_ISDV4_PEN))
+		tablet->quirks.need_to_force_prox_out = false;
 
 	libinput_timer_init(&tablet->quirks.prox_out_timer,
 			    tablet_libinput_context(tablet),

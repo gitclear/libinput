@@ -39,26 +39,23 @@ Print all events as seen by libinput
 .B libinput\-debug\-gui(1)
 Show a GUI to visualize libinput's events
 .TP 8
+.B libinput\-debug\-tablet(1)
+A commandline tool to debug tablet axis values
+.TP 8
 .B libinput\-list\-devices(1)
 List all devices recognized by libinput
 .TP 8
 .B libinput\-measure(1)
 Measure various properties of devices
 .TP 8
-.B libinput\-measure\-touch\-size(1)
-Measure touch size and orientation
-.TP 8
-.B libinput\-measure\-touchpad\-tap(1)
-Measure tap-to-click time
-.TP 8
-.B libinput\-measure\-touchpad\-pressure(1)
-Measure touch pressure
-.TP 8
 .B libinput\-record(1)
 Record the events from a device
 .TP 8
 .B libinput\-replay(1)
 Replay the events from a device
+.TP 8
+.B libinput\-analyze(1)
+Analyze events from a device
 .SH LIBINPUT
 Part of the
 .B libinput(1)

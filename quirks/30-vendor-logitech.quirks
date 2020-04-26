@@ -45,3 +45,25 @@ MatchBus=usb
 MatchVendor=0x046D
 MatchProduct=0x4011
 AttrPalmPressureThreshold=400
+
+[Logitech MX Master 2S]
+MatchVendor=0x46D
+MatchProduct=0x4069
+ModelInvertHorizontalScrolling=1
+
+# MX Master 2S has a different PID on bluetooth
+[Logitech MX Master 2S]
+MatchVendor=0x46D
+MatchProduct=0xB019
+ModelInvertHorizontalScrolling=1
+
+[Logitech MX Master 3]
+MatchVendor=0x46D
+MatchProduct=0x4082
+ModelInvertHorizontalScrolling=1
+
+# MX Master 3 has a different PID on bluetooth
+[Logitech MX Master 3]
+MatchVendor=0x46D
+MatchProduct=0xB023
+ModelInvertHorizontalScrolling=1

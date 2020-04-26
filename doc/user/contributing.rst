@@ -5,17 +5,140 @@
 Contributing to libinput
 ==============================================================================
 
-Contributions to libinput are always welcome. Please see the steps below for
-details on how to create merge requests, correct git formatting and other
-topics:
+
+So you want to contribute to libinput? Great! We'd love to help you be a part
+of our community. Here is some important information to help you.
 
 .. contents::
     :local:
 
-Questions regarding this process can be asked on ``#wayland-devel`` on
-freenode or on the `wayland-devel@lists.freedesktop.org
+------------------------------------------------------------------------------
+Code of Conduct
+------------------------------------------------------------------------------
+
+As a freedesktop.org project, libinput follows the `freedesktop.org
+Contributor Covenant <https://www.freedesktop.org/wiki/CodeOfConduct>`_.
+
+Please conduct yourself in a respectful and civilised manner when
+interacting with community members on mailing lists, IRC, or bug trackers.
+The community represents the project as a whole, and abusive or bullying
+behaviour is not tolerated by the project.
+
+------------------------------------------------------------------------------
+Contact
+------------------------------------------------------------------------------
+
+Questions can be asked on ``#wayland-devel`` on freenode or on the
+`wayland-devel@lists.freedesktop.org
 <https://lists.freedesktop.org/mailman/listinfo/wayland-devel>`_ mailing
 list.
+
+For IRC, ping user ``whot`` (Peter Hutterer, the libinput maintainer) though
+note that he lives on UTC+10 and thus the rest of the world is out of sync
+by default ;)
+
+For anything that appears to be device specific and/or related to a new
+feature, just file `an issue in our issue tracker
+<https://gitlab.freedesktop.org/libinput/libinput/issues>`_. It's usually the
+most efficient way to get answers.
+
+------------------------------------------------------------------------------
+What to work on?
+------------------------------------------------------------------------------
+
+If you don't already know what you want to improve or fix with libinput,
+then a good way of finding something is to search for the ``help needed``
+tag in our `issue tracker <https://gitlab.freedesktop.org/libinput/libinput/issues?label_name%5B%5D=help+needed>`_.
+These are issues that have been triaged to some degree and deemed to be a
+possible future feature to libinput. 
+
+.. note:: Some of these issue may require specific hardware to reproduce.
+
+Another good place to help out with is the documentation. For anything you
+find in these pages that isn't clear enough please feel free to reword it
+and add what is missing.
+
+------------------------------------------------------------------------------
+Getting the code
+------------------------------------------------------------------------------
+
+The :ref:`building_libinput` have all the details but the short solution
+will be:
+
+::
+
+     $> git clone https://gitlab.freedesktop.org/libinput/libinput
+     $> cd libinput
+     $> meson --prefix=/usr builddir/
+     $> ninja -C builddir/
+     $> sudo ninja -C builddir/ install
+
+You can omit the last step if you only want to test locally.
+
+------------------------------------------------------------------------------
+Working on the code
+------------------------------------------------------------------------------
+
+libinput has a roughly three-parts architecture: 
+
+-  the front-end code which handles the ``libinput_some_function()`` API calls in ``libinput.c``
+-  the generic evdev interface handling which maps those API calls to the
+   backend calls (``evdev.c``). 
+- there are device-specific backends which do most of the actual work -
+  ``evdev-mt-touchpad.c`` is the one for touchpads for example.
+
+In general, things that only affect the internal workings of a device only
+get implemented in the device-specific backend. You only need to touch the
+API when you are adding configuration options. For more details, please read
+the :ref:`architecture` document. There's also a `blog post describing the
+building blocks
+<https://who-t.blogspot.com/2019/03/libinputs-internal-building-blocks.html>`_
+that may help to understand how it all fits together.
+
+Documentation is in ``/doc/api`` for the doxygen-generated API documentation.
+These are extracted from the libinput source code directly. The
+documentation you're reading right now is in ``/doc/user`` and generated with
+sphinx. Simply running ``ninja -C builddir`` will rebuild it and the final
+product ends up in ``builddir/Documentation``.
+
+------------------------------------------------------------------------------
+Testing the code
+------------------------------------------------------------------------------
+
+libinput provides a bunch of :ref:`tools` to debug any changes - without
+having to install libinput.
+
+The two most useful ones are :ref:`libinput debug-events
+<libinput-debug-events>` and :ref:`libinput debug-gui <libinput-debug-gui>`.
+Both tools can be run from the build directory directly and are great for
+quick test iterations::
+
+  $> sudo ./builddir/libinput-debug-events --verbose
+  $> sudo ./builddir/libinput-debug-gui --verbose
+
+The former provides purely textual output and is useful for verifying event
+streams from buttons, etc. The latter is particularly useful when you are
+trying to debug pointer movement or placement. ``libinput debug-gui`` will
+also visualize the raw data from the device so you can compare pointer
+behavior with what comes from the kernel.
+
+These tools create a new libinput context and will not affect your session's
+behavior. Only once you've installed libinput and restarted your session
+will your changes affect the X server/Wayland compositor.
+
+Once everything seems to be correct, it's time to run the
+:ref:`test-suite`::
+
+  $> sudo ./builddir/libinput-test-suite
+
+This test suite can take test names etc. as arguments, have a look at
+:ref:`test-suite` for more info. There are a bunch of other tests that are
+run by the CI on merge requests, you can run those locally with ::
+
+  $> sudo ninja -C builddir check
+
+So it always pays to run that before submitting. This will also run the code
+through valgrind and pick up any memory leaks.
 
 ------------------------------------------------------------------------------
 Submitting Code
@@ -96,18 +219,24 @@ same file(s) as the patch being sent.
 Commit Messages
 ------------------------------------------------------------------------------
 
-Read `on commit messages <http://who-t.blogspot.de/2009/12/on-commit-messages.html>`_
-as a general guideline on what commit messages should contain.
+Commit messages **must** contain a **Signed-off-by** line with your name
+and email address. An example is: ::
 
-Commit messages **should** contain a **Signed-off-by** line with your name
-and email address. If you're not the patch's original author, you should
+    A description of this commit, and it's great work.
+
+    Signed-off-by: Claire Someone <name@domain>
+
+If you're not the patch's original author, you should
 also gather S-o-b's by them (and/or whomever gave the patch to you.) The
 significance of this is that it certifies that you created the patch, that
 it was created under an appropriate open source license, or provided to you
 under those terms. This lets us indicate a chain of responsibility for the
-copyright status of the code.
+copyright status of the code. An example is: ::
 
-We won't reject patches that lack S-o-b, but it is strongly recommended.
+    A description of this commit, and it's great work.
+
+    Signed-off-by: Claire Someone <name@domain>
+    Signed-off-by: Ferris Crab <name@domain>
 
 When you re-send patches, revised or not, it would be very good to document the
 changes compared to the previous revision in the commit message and/or the
@@ -115,6 +244,10 @@ merge request. If you have already received Reviewed-by or Acked-by tags, you
 should evaluate whether they still apply and include them in the respective
 commit messages. Otherwise the tags may be lost, reviewers miss the credit they
 deserve, and the patches may cause redundant review effort.
+
+For further reading, please see
+`'on commit messages' <http://who-t.blogspot.de/2009/12/on-commit-messages.html>`_
+as a general guideline on what commit messages should contain.
 
 ------------------------------------------------------------------------------
 Coding Style
@@ -160,14 +293,3 @@ web interface though, so we do recommend using this to go through the review
 process, even if you use other clients to track the list of available
 patches.
 
-------------------------------------------------------------------------------
-Code of Conduct
-------------------------------------------------------------------------------
-
-As a freedesktop.org project, libinput follows the `freedesktop.org
-Contributor Covenant <https://www.freedesktop.org/wiki/CodeOfConduct>`_.
-
-Please conduct yourself in a respectful and civilised manner when
-interacting with community members on mailing lists, IRC, or bug trackers.
-The community represents the project as a whole, and abusive or bullying
-behaviour is not tolerated by the project.

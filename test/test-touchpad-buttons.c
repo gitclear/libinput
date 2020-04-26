@@ -219,7 +219,7 @@ START_TEST(touchpad_3fg_clickfinger)
 	struct litest_device *dev = litest_current_device();
 	struct libinput *li = dev->libinput;
 
-	if (libevdev_get_num_slots(dev->evdev) < 3)
+	if (litest_slot_count(dev) < 3)
 		return;
 
 	litest_enable_clickfinger(dev);
@@ -253,7 +253,7 @@ START_TEST(touchpad_3fg_clickfinger_btntool)
 	struct litest_device *dev = litest_current_device();
 	struct libinput *li = dev->libinput;
 
-	if (libevdev_get_num_slots(dev->evdev) >= 3 ||
+	if (litest_slot_count(dev) >= 3 ||
 	    !libevdev_has_event_code(dev->evdev, EV_KEY, BTN_TOOL_TRIPLETAP))
 		return;
 
@@ -293,7 +293,7 @@ START_TEST(touchpad_4fg_clickfinger)
 	struct libinput *li = dev->libinput;
 	struct libinput_event *event;
 
-	if (libevdev_get_num_slots(dev->evdev) < 4)
+	if (litest_slot_count(dev) < 4)
 		return;
 
 	litest_enable_clickfinger(dev);
@@ -337,7 +337,7 @@ START_TEST(touchpad_4fg_clickfinger_btntool_2slots)
 	struct libinput *li = dev->libinput;
 	struct libinput_event *event;
 
-	if (libevdev_get_num_slots(dev->evdev) >= 3 ||
+	if (litest_slot_count(dev) >= 3 ||
 	    !libevdev_has_event_code(dev->evdev, EV_KEY, BTN_TOOL_QUADTAP))
 		return;
 
@@ -382,8 +382,7 @@ START_TEST(touchpad_4fg_clickfinger_btntool_3slots)
 	struct libinput *li = dev->libinput;
 	struct libinput_event *event;
 
-	if (libevdev_get_num_slots(dev->evdev) >= 4 ||
-	    libevdev_get_num_slots(dev->evdev) < 3 ||
+	if (litest_slot_count(dev) != 3 ||
 	    !libevdev_has_event_code(dev->evdev, EV_KEY, BTN_TOOL_TRIPLETAP))
 		return;
 
@@ -490,21 +489,20 @@ START_TEST(touchpad_3fg_clickfinger_distance)
 	struct litest_device *dev = litest_current_device();
 	struct libinput *li = dev->libinput;
 
-	if (libevdev_get_num_slots(dev->evdev) < 3)
+	if (litest_slot_count(dev) < 3)
 		return;
 
 	litest_enable_clickfinger(dev);
 
 	litest_drain_events(li);
 
-	litest_touch_down(dev, 0, 90, 90);
+	litest_touch_down(dev, 0, 90, 20);
 	litest_touch_down(dev, 1, 10, 15);
 	litest_touch_down(dev, 2, 10, 15);
-	litest_event(dev, EV_SYN, SYN_REPORT, 0);
+
 	litest_event(dev, EV_KEY, BTN_LEFT, 1);
 	litest_event(dev, EV_SYN, SYN_REPORT, 0);
 	litest_event(dev, EV_KEY, BTN_LEFT, 0);
-	litest_event(dev, EV_SYN, SYN_REPORT, 0);
 	litest_event(dev, EV_SYN, SYN_REPORT, 0);
 	litest_touch_up(dev, 0);
 	litest_touch_up(dev, 1);
@@ -524,14 +522,14 @@ START_TEST(touchpad_3fg_clickfinger_distance_btntool)
 	struct litest_device *dev = litest_current_device();
 	struct libinput *li = dev->libinput;
 
-	if (libevdev_get_num_slots(dev->evdev) > 2)
+	if (litest_slot_count(dev) > 2)
 		return;
 
 	litest_enable_clickfinger(dev);
 
 	litest_drain_events(li);
 
-	litest_touch_down(dev, 0, 90, 90);
+	litest_touch_down(dev, 0, 90, 15);
 	litest_touch_down(dev, 1, 10, 15);
 	libinput_dispatch(li);
 	litest_event(dev, EV_KEY, BTN_TOOL_DOUBLETAP, 0);
@@ -818,9 +816,9 @@ START_TEST(touchpad_clickfinger_3fg_tool_position)
 	litest_event(dev, EV_SYN, SYN_REPORT, 0);
 	libinput_dispatch(li);
 
-	litest_assert_button_event(li, BTN_MIDDLE,
+	litest_assert_button_event(li, BTN_RIGHT,
 				   LIBINPUT_BUTTON_STATE_PRESSED);
-	litest_assert_button_event(li, BTN_MIDDLE,
+	litest_assert_button_event(li, BTN_RIGHT,
 				   LIBINPUT_BUTTON_STATE_RELEASED);
 }
 END_TEST
@@ -956,6 +954,95 @@ START_TEST(touchpad_clickfinger_appletouch_3fg)
 				   LIBINPUT_BUTTON_STATE_PRESSED);
 	litest_assert_button_event(li, BTN_MIDDLE,
 				   LIBINPUT_BUTTON_STATE_RELEASED);
+}
+END_TEST
+
+START_TEST(touchpad_clickfinger_click_drag)
+{
+	struct litest_device *dev = litest_current_device();
+	struct libinput *li = dev->libinput;
+	int nfingers = _i; /* ranged test */
+	unsigned int button;
+	int nslots = litest_slot_count(dev);
+
+	litest_enable_clickfinger(dev);
+	litest_drain_events(li);
+
+	litest_touch_down(dev, 0, 40, 50);
+	button = BTN_LEFT;
+
+	if (nfingers > 1) {
+		if (nslots > 1) {
+			litest_touch_down(dev, 1, 50, 50);
+		} else {
+			litest_event(dev, EV_KEY, BTN_TOOL_DOUBLETAP, 1);
+		}
+		button = BTN_RIGHT;
+	}
+
+	if (nfingers > 2) {
+		if (nslots > 2) {
+			litest_touch_down(dev, 2, 60, 50);
+		} else {
+			litest_event(dev, EV_KEY, BTN_TOOL_DOUBLETAP, 0);
+			litest_event(dev, EV_KEY, BTN_TOOL_TRIPLETAP, 1);
+		}
+		button = BTN_MIDDLE;
+	}
+
+	litest_button_click(dev, BTN_LEFT, true);
+
+	libinput_dispatch(li);
+	litest_assert_button_event(li, button,
+				   LIBINPUT_BUTTON_STATE_PRESSED);
+
+	for (int i = 0; i < 20; i++) {
+		litest_push_event_frame(dev);
+		switch (nfingers) {
+		case 3:
+			if (nslots >= nfingers)
+				litest_touch_move(dev, 2, 60, 50 + i);
+			/* fallthrough */
+		case 2:
+			if (nslots >= nfingers)
+				litest_touch_move(dev, 1, 50, 50 + i);
+			/* fallthrough */
+		case 1:
+			litest_touch_move(dev, 0, 40, 50 + i);
+			break;
+		}
+		litest_pop_event_frame(dev);
+		libinput_dispatch(li);
+	}
+
+	litest_assert_only_typed_events(li, LIBINPUT_EVENT_POINTER_MOTION);
+
+	litest_button_click(dev, BTN_LEFT, false);
+	litest_assert_button_event(li, button,
+				   LIBINPUT_BUTTON_STATE_RELEASED);
+
+	if (nfingers > 3) {
+		if (nslots > 3) {
+			litest_touch_up(dev, 2);
+		} else {
+			litest_event(dev, EV_KEY, BTN_TOOL_DOUBLETAP, 1);
+			litest_event(dev, EV_KEY, BTN_TOOL_TRIPLETAP, 0);
+		}
+	}
+
+	if (nfingers > 2) {
+		if (nslots > 2) {
+			litest_touch_up(dev, 1);
+		} else {
+			litest_event(dev, EV_KEY, BTN_TOOL_DOUBLETAP, 0);
+		}
+	}
+
+	litest_touch_up(dev, 0);
+
+
+	libinput_dispatch(li);
+	litest_assert_empty_queue(li);
 }
 END_TEST
 
@@ -2007,6 +2094,8 @@ END_TEST
 
 TEST_COLLECTION(touchpad_buttons)
 {
+	struct range finger_count = {1, 4};
+
 	litest_add("touchpad:button", touchpad_button, LITEST_TOUCHPAD, LITEST_CLICKPAD);
 
 	litest_add("touchpad:clickfinger", touchpad_1fg_clickfinger, LITEST_CLICKPAD, LITEST_ANY);
@@ -2036,6 +2125,8 @@ TEST_COLLECTION(touchpad_buttons)
 	litest_add_for_device("touchpad:clickfinger", touchpad_clickfinger_appletouch_1fg, LITEST_APPLETOUCH);
 	litest_add_for_device("touchpad:clickfinger", touchpad_clickfinger_appletouch_2fg, LITEST_APPLETOUCH);
 	litest_add_for_device("touchpad:clickfinger", touchpad_clickfinger_appletouch_3fg, LITEST_APPLETOUCH);
+
+	litest_add_ranged("touchpad:clickfinger", touchpad_clickfinger_click_drag, LITEST_CLICKPAD, LITEST_ANY, &finger_count);
 
 	litest_add("touchpad:click", touchpad_click_defaults_clickfinger, LITEST_APPLE_CLICKPAD, LITEST_ANY);
 	litest_add("touchpad:click", touchpad_click_defaults_btnarea, LITEST_CLICKPAD, LITEST_APPLE_CLICKPAD);

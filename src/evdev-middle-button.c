@@ -31,9 +31,8 @@
 
 /*****************************************
  * BEFORE YOU EDIT THIS FILE, look at the state diagram in
- * doc/middle-button-emulation-state-machine.svg, or online at
- * https://drive.google.com/file/d/0B1NwWmji69nodUJncXRMc1FvY1k/view?usp=sharing
- * (it's a http://draw.io diagram)
+ * doc/middle-button-emulation-state-machine.svg (generated with
+ * https://draw.io).
  *
  * Any changes in this file must be represented in the diagram.
  *
@@ -553,7 +552,7 @@ evdev_middlebutton_handle_event(struct evdev_device *device,
 	}
 
 	evdev_log_debug(device,
-			"middlebuttonstate: %s → %s → %s, rc %d\n",
+			"middlebutton state: %s → %s → %s, rc %d\n",
 			middlebutton_state_to_str(current),
 			middlebutton_event_to_str(event),
 			middlebutton_state_to_str(device->middlebutton.state),
